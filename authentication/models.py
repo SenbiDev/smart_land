@@ -34,7 +34,7 @@ class CustomUser(AbstractUser):
 
 class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    # avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     website = models.URLField(blank=True)
 
     def __str__(self):
