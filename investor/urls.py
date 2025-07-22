@@ -1,8 +1,7 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import InvestorListCreateView, InvestorDetailView
+from django.urls import path
+from . import views
 
 urlpatterns = [
-    path('', InvestorListCreateView.as_view(), name='investor-list-create'),
-    path('<int:pk>/', InvestorDetailView.as_view(), name='investor-detail'),
+    path('investors/', views.investor_list_create, name='investor-list-create'),
+    path('investors/<int:pk>/', views.investor_detail, name='investor-detail'),
 ]
