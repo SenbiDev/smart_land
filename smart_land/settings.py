@@ -46,7 +46,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'authentication',
     'investor',
-    'django_extensions',
 ]
 
 REST_FRAMEWORK = {
