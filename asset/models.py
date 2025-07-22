@@ -18,7 +18,7 @@ class Pemilik(models.Model):
 class Asset(models.Model):
     ASSET_TYPES = [
         ('lahan', 'Lahan'),
-        ('alat' 'Alat'),
+        ('alat', 'Alat'),
         ('bangunan', 'Bangunan'),
         ('ternak', 'Ternak'),
     ]

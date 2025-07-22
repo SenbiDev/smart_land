@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from .models import KategoriAset, Asset, Pemilik
-from serializers import KategoriAsetSerializer, AsetSerializer, PemilikSerializer
+from .serializers import KategoriAsetSerializer, AsetSerializer, PemilikSerializer
 
 # Create your views here.
 
@@ -49,7 +49,7 @@ def asset_detail(request, pk):
     elif request.method == 'PUT':
         serializer = AsetSerializer(asset, data=request.data)
         if serializer.is_valid():
-            serializer.save(user=request.data)
+            serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -59,7 +59,7 @@ def asset_detail(request, pk):
         
 @api_view(['GET'])
 def list_pemilik(request):
-    pemilik = Pemilik.Objects.all()
+    pemilik = Pemilik.objects.all()
     serializer = PemilikSerializer(pemilik, many=True)
     return Response(serializer.date)
 
