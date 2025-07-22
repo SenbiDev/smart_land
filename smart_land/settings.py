@@ -45,12 +45,13 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'authentication',
+    'investor',
     'asset',
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_': (
-        'rest_framework_simple.authentication.JWTAuthentication',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
