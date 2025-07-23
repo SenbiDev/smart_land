@@ -1,17 +1,12 @@
 from rest_framework import serializers
-from .models import KategoriAset, Asset, Pemilik
-
-class KategoriAsetSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = KategoriAset
-        fields = '__all__'
+from .models import Asset, Owner
 
 class AsetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Asset
         fields = '__all__'
 
-class PemilikSerializer(serializers.ModelSerializer):
+class OwnerSerializer(serializers.ModelSerializer):
     class Meta:
-        model= Pemilik
+        model= Owner
         fields= '__all__'
