@@ -1,15 +1,14 @@
 from django.db import models
-from production.models import Production  
+from django.utils import timezone
+from production.models import Production
 
-# Create your models here.
 class ProfitDistribution(models.Model):
-    production = models.ForeignKey(Production, on_delete=models.CASCADE, related_name='profit_distribution')
+    production = models.ForeignKey(Production, on_delete=models.CASCADE)
     period = models.CharField(max_length=100)
-    net_profit = models.DecimalField(max_digits=12, decimal_places=2)
-    landowner_share = models.DecimalField(max_digits=15, decimal_places=2)
-    Investor_share = models.DecimalField(max_digits=15, decimal_places=2)
-    distribution_date = models.DateField()
-    created_at = models.DateTimeField(auto_now_add=True)
+    net_profit = models.DecimalField(max_digits=20, decimal_places=2)
+    landowner_share = models.DecimalField(max_digits=20, decimal_places=2)
+    investor_share = models.DecimalField(max_digits=20, decimal_places=2, default=0.00)
+    created_at = models.DateTimeField(default=timezone.now)
 
     def __str__(self):
-        return f"ProfitDistribution : {self.net_profit} on {self.date}"
+        return f"Profit Distribution - {self.period} (ID: {self.id})"
