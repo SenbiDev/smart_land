@@ -24,4 +24,6 @@ urlpatterns = [
     path('api/', include('authentication.urls')),
     path('api/investor/', include('investor.urls')),
     path('api/', include('asset.urls')),
+    path('api/fundingsource/', include('funding_source.urls')),
+    path('api/funding/', include('funding.urls')),
 ]
