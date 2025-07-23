@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'investor',
     'asset',
     'production',
+    'profit_distribution',
 ]
 
 REST_FRAMEWORK = {
