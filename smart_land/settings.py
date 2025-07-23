@@ -47,11 +47,8 @@ INSTALLED_APPS = [
     'authentication',
     'investor',
     'asset',
-<<<<<<< HEAD
-    'production',
-=======
     'project',
->>>>>>> c1e95fb (add project)
+    'production',
 ]
 
 REST_FRAMEWORK = {
