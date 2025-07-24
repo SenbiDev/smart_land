@@ -10,7 +10,7 @@ from .serializers import KategoriAsetSerializer, AsetSerializer, PemilikSerializ
 def list_kategori(request):
     kategori = KategoriAset.objects.all()
     serializer = KategoriAsetSerializer(kategori, many=True)
-    return Response(serializer.date)
+    return Response(serializer.data)
 
 @api_view(['POST'])
 def tambah_kategori(request):
@@ -24,7 +24,7 @@ def tambah_kategori(request):
 def list_aset(request):
     aset = Asset.objects.all()
     serializer = AsetSerializer(aset, many=True)
-    return Response(serializer.date) 
+    return Response(serializer.data) 
 
 @api_view(['POST'])
 def tambah_aset(request):
@@ -61,7 +61,7 @@ def asset_detail(request, pk):
 def list_pemilik(request):
     pemilik = Pemilik.objects.all()
     serializer = PemilikSerializer(pemilik, many=True)
-    return Response(serializer.date)
+    return Response(serializer.data)
 
 @api_view(['POST'])
 def tambah_pemilik(request):

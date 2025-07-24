@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'funding_source',
     'funding',
     'ownership',
+    'production',
 ]
 
 REST_FRAMEWORK = {
