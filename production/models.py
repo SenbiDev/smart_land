@@ -1,5 +1,4 @@
 from django.db import models
-from django.db import models
 from asset.models import Asset  
 
 # Create your models here.
