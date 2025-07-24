@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'authentication',
     'investor',
     'asset',
+    'project',
     'production',
     'profit_distribution',
 ]
