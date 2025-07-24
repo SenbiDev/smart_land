@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'project',
     'production',
     'profit_distribution',
+    'distribution_detail',
 ]
 
 REST_FRAMEWORK = {
