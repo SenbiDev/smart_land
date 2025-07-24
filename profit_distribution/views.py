@@ -1,10 +1,11 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, permissions
 from .models import ProfitDistribution
 from .serializers import ProfitDistributionSerializer
 
 @api_view(['GET', 'POST'])
+@permission_classes([permissions.IsAuthenticated])
 def profit_distribution_list(request):
     if request.method == 'GET':
         distributions = ProfitDistribution.objects.all()
@@ -19,6 +20,7 @@ def profit_distribution_list(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([permissions.IsAuthenticated])
 def profit_distribution_detail(request, pk):
     try:
         distribution = ProfitDistribution.objects.get(pk=pk)
