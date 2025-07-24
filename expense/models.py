@@ -17,7 +17,7 @@ class Expense(models.Model):
     description = models.TextField(max_length=100)
     proof_url = models.TextField(max_length=100)
     project_id = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='expense')
-    funding_url = models.ForeignKey(Funding, on_delete=models.CASCADE, related_name='expense')
+    funding_id = models.ForeignKey(Funding, on_delete=models.CASCADE, related_name='expense')
     asset_id = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='expense')
     created_at = models.DateTimeField(auto_now_add=True)
 
