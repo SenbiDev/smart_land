@@ -1,20 +1,25 @@
 from django.db import models
-
+from project.models import Project 
+from funding.models import Funding
+from asset.models import Asset
 # Create your models here.
 
 class Expense(models.Model):
     CATEGORY_CHOICES=[
-        ('', '')
+        ('pertanian', 'Pertanian'),
+        ('peternakan', 'Peternakan'),
+        ('bagunan', 'Bangunan')
     ]
 
-    amaount = models.DecimalField(max_digits=20, decimal_places=2)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    amount = models.DecimalField(max_digits=20, decimal_places=2)
     date = models.DateField()
     description = models.TextField(max_length=100)
     proof_url = models.TextField(max_length=100)
-    project_id = models.IntegerField()
-    funding_url = models.IntegerField()
-    asset_id = models.IntegerField()
+    project_id = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='expense')
+    funding_url = models.ForeignKey(Funding, on_delete=models.CASCADE, related_name='expense')
+    asset_id = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='expense')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.name
+        return f"Expense {self.id} – {self.description[:20]}"

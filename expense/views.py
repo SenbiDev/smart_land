@@ -2,18 +2,18 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from .models import Expense
-from .serializers import ExpenceSerializer
+from .serializers import ExpenseSerializer
 
 @api_view(['GET', 'POST'])
 @permission_classes([permissions.IsAuthenticated])
 def list_expense(request):
     if request.method == 'GET':
         expenses = Expense.objects.all()
-        serializer = ExpenceSerializer(expenses, many=True)
+        serializer = ExpenseSerializer(expenses, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        serializer = ExpenceSerializer(data=request.data)
+        serializer = ExpenseSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -28,11 +28,11 @@ def expense_detail(request, pk):
         return Response({'error': 'Expense not found'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = ExpenceSerializer(expense)
+        serializer = ExpenseSerializer(expense)
         return Response(serializer.data)
 
     elif request.method == 'PUT':
-        serializer = ExpenceSerializer(expense, data=request.data)
+        serializer = ExpenseSerializer(expense, data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
