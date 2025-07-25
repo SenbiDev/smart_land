@@ -6,9 +6,13 @@ from asset.models import Asset
 
 class Expense(models.Model):
     CATEGORY_CHOICES=[
-        ('pertanian', 'Pertanian'),
-        ('peternakan', 'Peternakan'),
-        ('bagunan', 'Bangunan')
+        ('material', 'Material'),
+        ('tenaga kerja', 'Tenaga Kerja'),
+        ('transport', 'Transport'),
+        ('feed', 'Pakan'),
+        ('perawatan', 'Perawatan'),
+        ('tools', 'Alat dan Perlengkapan'),
+        ('other', 'Lain-Lain'),
     ]
 
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
