@@ -41,14 +41,7 @@ def expense_detail(request, pk):
 
     elif request.method == 'DELETE':
         expense.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from django.db.models import Sum
-from .models import Expense
-from .serializers import ExpenseSerializer
+        return Response(status=status.HTTP_204_NO_CONTENT)  
 
 @api_view(['GET', 'POST'])
 @permission_classes([permissions.IsAuthenticated])
