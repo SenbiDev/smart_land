@@ -70,7 +70,7 @@ def expense_list_create(request):
             except Funding.DoesNotExist:
                 return Response({'error': 'funding tidak di temukan'},status=status.HTTP_400_BAD_REQUEST)
             expense_amount = serializer.validated_data['amount']
-            total_expense = Expense.objects.filter(funding_id=funding_id).aaggregate(total=Sum('amount'))['total'] or 0
+            total_expense = Expense.objects.filter(funding_id=funding_id).aggregate(total=Sum('amount'))['total'] or 0
 
             if total_expense + expense_amount > funding.amount:
                 return Response({'error': 'Dana tidak cukup'},status=status.HTTP_400_BAD_REQUEST)
@@ -99,7 +99,7 @@ def expense_detail_update_delete(request, pk):
         if serializer.is_valid():
             new_amount = serializer.validated_data['amount']
             funding = expense.funding_id
-            total_expense_lain = Expense.objects.filter(funding_id=funding).exclude(id=expense.id).aaggregate(total=Sum('amount'))['total'] or 0
+            total_expense_lain = Expense.objects.filter(funding_id=funding).exclude(id=expense.id).aggregate(total=Sum('amount'))['total'] or 0
 
             if total_expense_lain + new_amount > funding.amount + old_amount:
                 return Response({'error': 'dana tidak mencukupi untuk update'},status=status.HTTP_400_BAD_REQUEST)
