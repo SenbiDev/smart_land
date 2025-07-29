@@ -56,10 +56,10 @@ def expense_list_create(request):
 
         if project_id: expenses = expenses.filter(project_id=project_id)
         if funding_id: expenses = expenses.filter(funding_id=funding_id)
-        if asset_id: expenses = expenses.filter(asset_id=asset_id),
+        if asset_id: expenses = expenses.filter(asset_id=asset_id)
 
         serializer = ExpenseSerializer(expenses, many=True)
-        return Response({serializer.data})
+        return Response(serializer.data)
     
     elif request.method == 'POST':
         serializer = ExpenseSerializer(data=request.data)
@@ -78,7 +78,7 @@ def expense_list_create(request):
             funding.amount -= expense_amount
             funding.save()
             return Response(serializer.data,status=status.HTTP_201_CREATED)
-        return Response(serializer.data,status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
 
     
 @api_view(['GET', 'PUT', 'DELETE'])
