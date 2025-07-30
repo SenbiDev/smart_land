@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'profit_distribution',
     'distribution_detail',
     'expense',
+    'dashboard',
 ]
 
 REST_FRAMEWORK = {
