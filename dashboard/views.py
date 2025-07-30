@@ -19,14 +19,17 @@ def Dashboard(request):
     ownership_list=[]
     if total_units:
         investor_aggregate = (
-            Ownership.objects
-            .values('investor__user__username')
+            Ownership.objects\
+            .values('investor__user__username')\
             .annotate(total_units=Sum('units'))
             )
         for entry in investor_aggregate:
             name = entry['investor__user__username']
             percentage = round((entry["total_units"] / total_units) * 100, 2)
-            ownership_list.append(f"{name}:{percentage}%")
+            ownership_list.append({
+                "name": name,
+                "percentage": percentage
+            })
 
     data = {
         "total_assets": total_assets,
