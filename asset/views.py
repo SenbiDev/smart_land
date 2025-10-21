@@ -4,21 +4,21 @@ from rest_framework import status, permissions
 from .models import Asset, Owner
 from .serializers import AsetSerializer, OwnerSerializer
 
-# Create your views here.
-
 @api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
 def list_aset(request):
     aset = Asset.objects.all()
     serializer = AsetSerializer(aset, many=True)
     return Response(serializer.data) 
 
 @api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
 def tambah_aset(request):
     serializer = AsetSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        return Response(serializer.data)
-    return Response(serializer.errors)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([permissions.IsAuthenticated])
@@ -26,7 +26,7 @@ def asset_detail(request, pk):
     try:
         asset = Asset.objects.get(pk=pk)
     except Asset.DoesNotExist:
-        return Response({'error': 'Asset not found'})
+        return Response({'error': 'Asset not found'}, status=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
         serializer = AsetSerializer(asset)
@@ -44,18 +44,20 @@ def asset_detail(request, pk):
         return Response({'message': 'Asset deleted'}, status=status.HTTP_204_NO_CONTENT)
         
 @api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
 def list_owner(request):
     pemilik = Owner.objects.all()
     serializer = OwnerSerializer(pemilik, many=True)
     return Response(serializer.data)
 
 @api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
 def tambah_owner(request):
     serializer = OwnerSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        return Response(serializer.data)
-    return Response(serializer.errors) 
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST) 
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([permissions.IsAuthenticated])
@@ -63,7 +65,7 @@ def owner_detail(request, pk):
     try:
         owner = Owner.objects.get(pk=pk)
     except Owner.DoesNotExist:
-        return Response({'error': 'Owner not found'})
+        return Response({'error': 'Owner not found'}, status=status.HTTP_404_NOT_FOUND)
     
     if request.method == 'GET':
         serializer = OwnerSerializer(owner)
@@ -79,4 +81,3 @@ def owner_detail(request, pk):
     elif request.method == 'DELETE':
         owner.delete()
         return Response({'message': 'Owner deleted'}, status=status.HTTP_204_NO_CONTENT)
-        

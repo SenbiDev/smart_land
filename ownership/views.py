@@ -5,9 +5,7 @@ from rest_framework import status
 from django.db.models import Sum
 from .models import Ownership
 from .serializers import OwnershipSerializer
-from django.shortcuts import get_object_or_404
 
-# Create your views here.
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def ownership_list(request):
@@ -62,6 +60,7 @@ def ownership_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+        asset_id = ownership.asset.id
         ownership.delete()
 
         total_units = Ownership.objects.filter(asset=asset_id).aggregate(total=Sum('units'))['total'] or 0

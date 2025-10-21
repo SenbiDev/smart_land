@@ -12,6 +12,8 @@ from investor.models import Investor
 from profit_distribution.models import ProfitDistribution
 from distribution_detail.models import DistributionDetail
 
+# Konstanta untuk persentase owner
+OWNER_SHARE_PERCENTAGE = Decimal("0.10")
 
 @api_view(['GET', 'POST'])
 @permission_classes([permissions.IsAuthenticated])
@@ -32,7 +34,7 @@ def production_list(request):
             asset = production.asset
             net_profit = total_value
 
-            owner_share = net_profit * Decimal("0.10")
+            owner_share = net_profit * OWNER_SHARE_PERCENTAGE
             investor_share_total = net_profit - owner_share
 
             ownerships = Ownership.objects.filter(asset=asset)
@@ -95,8 +97,7 @@ def production_detail(request, pk):
             asset = production.asset
             net_profit = total_value
 
-            # Bagi hasil
-            owner_share = net_profit * Decimal("0.25")
+            owner_share = net_profit * OWNER_SHARE_PERCENTAGE
             investor_share_total = net_profit - owner_share
 
             ownerships = Ownership.objects.filter(asset=asset)

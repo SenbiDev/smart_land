@@ -1,13 +1,14 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status as http_status
+from rest_framework.permissions import IsAuthenticated
 from django.db.models import Sum, F, DecimalField
 from funding.models import Funding
 from expense.models import Expense
 from production.models import Production
 
-#Create your views here
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def laporan_keuangan(request):
     total_dana = Funding.objects.aggregate(total=Sum('amount'))['total'] or 0
     total_pengeluaran = Expense.objects.aggregate(total=Sum('amount'))['total'] or 0
@@ -35,4 +36,4 @@ def laporan_keuangan(request):
         }
     }
 
-    return Response(data, status=status.HTTP_200_OK)
+    return Response(data, status=http_status.HTTP_200_OK)
