@@ -1,11 +1,14 @@
+# File: senbidev/smart_land/smart_land-faiz/expense/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from .models import Expense
 from .serializers import ExpenseSerializer
+# Impor izin kustom baru
+from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
 
 @api_view(['GET', 'POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
 def list_expense(request):
     if request.method == 'GET':
         expenses = Expense.objects.all()
@@ -20,7 +23,7 @@ def list_expense(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (detail)
 def expense_detail(request, pk):
     try:
         expense = Expense.objects.get(pk=pk)
@@ -31,7 +34,13 @@ def expense_detail(request, pk):
         serializer = ExpenseSerializer(expense)
         return Response(serializer.data)
 
-    elif request.method == 'PUT':
+    # Tambahkan pengecekan role manual untuk PUT dan DELETE
+    is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
+
+    if request.method == 'PUT':
+        if not is_admin:
+            return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer = ExpenseSerializer(expense, data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -39,5 +48,8 @@ def expense_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+        if not is_admin:
+            return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
+        
         expense.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

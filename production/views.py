@@ -1,3 +1,4 @@
+# File: senbidev/smart_land/smart_land-faiz/production/views.py
 from decimal import Decimal
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -11,12 +12,14 @@ from ownership.models import Ownership
 from investor.models import Investor
 from profit_distribution.models import ProfitDistribution
 from distribution_detail.models import DistributionDetail
+# Impor izin kustom baru
+from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
 
 # Konstanta untuk persentase owner
 OWNER_SHARE_PERCENTAGE = Decimal("0.10")
 
 @api_view(['GET', 'POST'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
 def production_list(request):
     if request.method == 'GET':
         productions = Production.objects.all().order_by('-date')
@@ -24,6 +27,9 @@ def production_list(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
+        # (Logika bisnis Anda untuk POST tetap di sini)
+        # ... (kode serializer.is_valid() Anda, dll) ...
+        # ... (Saya singkat agar fokus pada izin) ...
         serializer = ProductionSerializer(data=request.data)
         if serializer.is_valid():
             quantity = serializer.validated_data['quantity']
@@ -77,7 +83,7 @@ def production_list(request):
 
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (detail)
 def production_detail(request, pk):
     production = get_object_or_404(Production, pk=pk)
 
@@ -85,7 +91,15 @@ def production_detail(request, pk):
         serializer = ProductionSerializer(production)
         return Response(serializer.data)
 
-    elif request.method in ['PUT', 'PATCH']:
+    # Tambahkan pengecekan role manual untuk PUT, PATCH, dan DELETE
+    is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
+
+    if request.method in ['PUT', 'PATCH']:
+        if not is_admin:
+            return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # (Logika bisnis Anda untuk PUT/PATCH tetap di sini)
+        # ... (Saya singkat agar fokus pada izin) ...
         data = request.data.copy()
         quantity = float(data.get('quantity', production.quantity))
         unit_price = float(data.get('unit_price', production.unit_price))
@@ -139,5 +153,8 @@ def production_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+        if not is_admin:
+            return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
+        
         production.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
