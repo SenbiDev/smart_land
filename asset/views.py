@@ -2,29 +2,32 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from .models import Asset, Owner
-from .serializers import AsetSerializer, OwnerSerializer
+from .serializers import AsetSerializer, AsetCreateUpdateSerializer, OwnerSerializer
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def list_aset(request):
-    aset = Asset.objects.all()
-    serializer = AsetSerializer(aset, many=True)
+    assets = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').all()
+    serializer = AsetSerializer(assets, many=True)
     return Response(serializer.data) 
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def tambah_aset(request):
-    serializer = AsetSerializer(data=request.data)
+    serializer = AsetCreateUpdateSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Return dengan serializer lengkap
+        asset = Asset.objects.get(pk=serializer.data['id'])
+        return_serializer = AsetSerializer(asset)
+        return Response(return_serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([permissions.IsAuthenticated])
 def asset_detail(request, pk):
     try:
-        asset = Asset.objects.get(pk=pk)
+        asset = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').get(pk=pk)
     except Asset.DoesNotExist:
         return Response({'error': 'Asset not found'}, status=status.HTTP_404_NOT_FOUND)
     
@@ -33,21 +36,26 @@ def asset_detail(request, pk):
         return Response(serializer.data)
     
     elif request.method == 'PUT':
-        serializer = AsetSerializer(asset, data=request.data)
+        serializer = AsetCreateUpdateSerializer(asset, data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data)
+            # Return dengan serializer lengkap
+            asset.refresh_from_db()
+            return_serializer = AsetSerializer(asset)
+            return Response(return_serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
         asset.delete()
         return Response({'message': 'Asset deleted'}, status=status.HTTP_204_NO_CONTENT)
-        
+
+# ========== OWNER ENDPOINTS ==========
+
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def list_owner(request):
-    pemilik = Owner.objects.all()
-    serializer = OwnerSerializer(pemilik, many=True)
+    owners = Owner.objects.prefetch_related('assets').all()
+    serializer = OwnerSerializer(owners, many=True)
     return Response(serializer.data)
 
 @api_view(['POST'])
@@ -63,7 +71,7 @@ def tambah_owner(request):
 @permission_classes([permissions.IsAuthenticated])
 def owner_detail(request, pk):
     try:
-        owner = Owner.objects.get(pk=pk)
+        owner = Owner.objects.prefetch_related('assets').get(pk=pk)
     except Owner.DoesNotExist:
         return Response({'error': 'Owner not found'}, status=status.HTTP_404_NOT_FOUND)
     
