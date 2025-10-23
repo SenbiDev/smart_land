@@ -1,9 +1,10 @@
 import json
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework_simplejwt.tokens import RefreshToken
 from .models import CustomUser
 from .serializers import RegisterSerializer
 from django.contrib.auth import authenticate
@@ -117,3 +118,42 @@ def logout_view(request):
     response.delete_cookie('refresh_token')
     response.delete_cookie('user')
     return response
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def refresh_view(request):
+    refresh_token = request.COOKIES.get('refresh_token')
+
+    if not refresh_token:
+        return Response({'error': 'Refresh token not found'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        token = RefreshToken(refresh_token)
+
+        # Mendapatkan user dari token
+        user = CustomUser.objects.get(id=token['user_id'])
+
+        # Membuat token baru
+        new_refresh_token = RefreshToken.for_user(user)
+
+        user_data = {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'role': user.role
+        }
+
+        response = Response({'user': user_data})
+
+        # Set cookie baru (HttpOnly dan user cookie)
+        set_auth_cookies(response, new_refresh_token)
+        set_user_cookie(response, user_data)
+
+        return response
+
+    except TokenError as e:
+        # Jika refresh token juga tidak valid/expired
+        return Response({'error': 'Invalid refresh token'}, status=status.HTTP_401_UNAUTHORIZED)
+    except CustomUser.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_401_UNAUTHORIZED)
