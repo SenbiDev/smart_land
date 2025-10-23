@@ -14,6 +14,8 @@ def set_auth_cookies(response, refresh_token):
     is_production = not settings.DEBUG
     access_token = refresh_token.access_token
     
+    print(f"🍪 Setting cookies - is_production: {is_production}")  # Debug
+    
     response.set_cookie(
         key='access_token',
         value=str(access_token),
@@ -30,6 +32,8 @@ def set_auth_cookies(response, refresh_token):
         secure=is_production,
         samesite='Lax'
     )
+    
+    print(f"✅ Cookies set: access_token={str(access_token)[:20]}...")  # Debug
     return response
 
 # Helper function to set the user data cookie (accessible by JS)

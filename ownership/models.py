@@ -13,4 +13,4 @@ class Ownership(models.Model):
     investment_date = models.DateField()
 
     def __str__(self):
-        return f"{self.investor.username} - {self.asset.name} ({self.units} units)"
+        return f"{self.investor.user.username} - {self.asset.name} ({self.units} units)"

@@ -35,7 +35,7 @@ def Dashboard(request):
         "total_assets": total_assets,
         "total_funding": total_funding,
         "total_yield": total_yield,
-        "ownership_precentage": ownership_list
+        "ownership_percentage": ownership_list
     }
 
     return Response(data)

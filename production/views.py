@@ -62,7 +62,7 @@ def production_list(request):
                 investor_distributions.append({
                     'investor': o.investor.user.username,
                     'percentage': round(percent * 100, 2),
-                    'share': str(float(share))
+                    'share': str(share)
                 })
 
             return Response({
