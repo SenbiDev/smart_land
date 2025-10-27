@@ -45,7 +45,7 @@ class Asset(models.Model):
     location = models.CharField(max_length=100, verbose_name='Lokasi')
     size = models.FloatField(verbose_name='Ukuran (m²)')
     value = models.DecimalField(max_digits=20, decimal_places=2, verbose_name='Nilai Aset')
-    acquistion_date = models.DateField(verbose_name='Tanggal Akuisisi')
+    acquisition_date = models.DateField(verbose_name='Tanggal Akuisisi')
     ownership_status = models.CharField(
         max_length=50, 
         choices=OWNERSHIP_STATUS_CHOICES,

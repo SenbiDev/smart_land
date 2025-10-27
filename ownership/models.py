@@ -9,7 +9,7 @@ class Ownership(models.Model):
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='ownerships')
     funding = models.ForeignKey(Funding, on_delete=models.CASCADE, related_name='ownerships')
     units = models.IntegerField()
-    ownership_precentage = models.FloatField(default=0.0, blank=True, null=True)
+    ownership_percentage = models.FloatField(default=0.0, blank=True, null=True)
     investment_date = models.DateField()
 
     def __str__(self):

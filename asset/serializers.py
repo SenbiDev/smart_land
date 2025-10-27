@@ -39,7 +39,7 @@ class AsetSerializer(serializers.ModelSerializer):
                 'investor_id': o.investor.id,
                 'investor_name': o.investor.user.username,
                 'units': o.units,
-                'ownership_percentage': o.ownership_precentage,
+                'ownership_percentage': o.ownership_percentage,
                 'investment_date': o.investment_date
             }
             for o in ownerships
