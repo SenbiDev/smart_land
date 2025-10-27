@@ -6,17 +6,17 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import CustomUser
-from .serializers import RegisterSerializer
+from .serializers import RegisterSerializer # Import serializer yang sudah diperbaiki
 from django.contrib.auth import authenticate
 from django.conf import settings
 
-# Helper function to set HttpOnly auth cookies
+# ... (fungsi set_auth_cookies dan set_user_cookie tetap sama) ...
 def set_auth_cookies(response, refresh_token):
     is_production = not settings.DEBUG
     access_token = refresh_token.access_token
-    
+
     print(f"🍪 Setting cookies - is_production: {is_production}")  # Debug
-    
+
     response.set_cookie(
         key='access_token',
         value=str(access_token),
@@ -33,7 +33,7 @@ def set_auth_cookies(response, refresh_token):
         secure=is_production,
         samesite='Lax'
     )
-    
+
     print(f"✅ Cookies set: access_token={str(access_token)[:20]}...")  # Debug
     return response
 
@@ -41,8 +41,8 @@ def set_auth_cookies(response, refresh_token):
 def set_user_cookie(response, user_data):
     is_production = not settings.DEBUG
     # Ensure the value is a valid JSON string
-    cookie_value = json.dumps(user_data) 
-    
+    cookie_value = json.dumps(user_data)
+
     # Debug print to verify JSON format (optional)
     # print(f"DEBUG: Setting user cookie with value: {cookie_value}")
 
@@ -55,6 +55,7 @@ def set_user_cookie(response, user_data):
         samesite='Lax'
     )
     return response
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -72,41 +73,42 @@ def login_view(request):
             'email': user.email,
             'role': user.role
         }
-        
+
         response = Response({'user': user_data})
         set_auth_cookies(response, refresh)
-        set_user_cookie(response, user_data) 
+        set_user_cookie(response, user_data)
         return response
-        
+
     # Use 401 Unauthorized for invalid credentials
     return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_view(request):
-    request_data = request.data.copy()
-    # Ensure default role if not provided
-    if 'role' not in request_data or not request_data['role']:
-        request_data['role'] = 'Viewer' 
+    # HAPUS Logika manipulasi request_data untuk role default
+    # request_data = request.data.copy()
+    # if 'role' not in request_data or not request_data['role']:
+    #     request_data['role'] = 'Viewer'
 
-    serializer = RegisterSerializer(data=request_data)
+    # Gunakan request.data langsung karena serializer sudah tidak menerima 'role'
+    serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
-        
+
         # Manually create user_data dict for consistency with login_view
         user_data = {
             'id': user.id,
             'username': user.username,
             'email': user.email,
-            'role': user.role
+            'role': user.role # Role akan otomatis 'Viewer'
         }
-        
+
         response = Response({'user': user_data}, status=status.HTTP_201_CREATED)
         set_auth_cookies(response, refresh)
         set_user_cookie(response, user_data)
         return response
-        
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])

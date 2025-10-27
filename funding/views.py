@@ -2,11 +2,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from authentication.permissions import IsAdminOrSuperadmin
 from .models import Funding
 from .serializers import FundingSerializer
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def funding_list(request):
     if request.method == 'GET':
         data = Funding.objects.all()
@@ -22,7 +23,7 @@ def funding_list(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def funding_detail(request, pk):
     try:
         data = Funding.objects.get(pk=pk)

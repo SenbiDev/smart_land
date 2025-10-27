@@ -4,7 +4,7 @@ from funding_source.models import FundingSource
 # Create your models here.
 class Funding(models.Model):
     STATUS_CHOICES = [
-        ('avaliable', 'Tersedia'),
+        ('available', 'Tersedia'),
         ('allocated', 'Teralokasi'),
         ('used', 'Terpakai'),
     ]

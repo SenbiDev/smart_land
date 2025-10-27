@@ -15,8 +15,8 @@ from distribution_detail.models import DistributionDetail
 # Impor izin kustom baru
 from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
 
-# Konstanta untuk persentase owner
-OWNER_SHARE_PERCENTAGE = Decimal("0.10")
+# ❗️ DIHAPUS: Konstanta tidak lagi digunakan
+# OWNER_SHARE_PERCENTAGE = Decimal("0.10") 
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
@@ -27,9 +27,6 @@ def production_list(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        # (Logika bisnis Anda untuk POST tetap di sini)
-        # ... (kode serializer.is_valid() Anda, dll) ...
-        # ... (Saya singkat agar fokus pada izin) ...
         serializer = ProductionSerializer(data=request.data)
         if serializer.is_valid():
             quantity = serializer.validated_data['quantity']
@@ -40,20 +37,32 @@ def production_list(request):
             asset = production.asset
             net_profit = total_value
 
-            owner_share = net_profit * OWNER_SHARE_PERCENTAGE
+            # --- POIN 2: Ambil persentase dinamis dari Aset ---
+            owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
+            owner_share = net_profit * owner_share_percent_decimal
+            # --------------------------------------------------
+            
             investor_share_total = net_profit - owner_share
 
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1  
 
-            distribution = ProfitDistribution.objects.create(
-                production=production,
-                period=str(production.date),
-                net_profit=net_profit,
-                landowner_share=owner_share,
-                investor_share=investor_share_total,
-                created_at=timezone.now()
+            # --- POIN 3: Gunakan update_or_create ---
+            distribution, created = ProfitDistribution.objects.update_or_create(
+                production=production, # Kunci unik
+                defaults={
+                    'period': str(production.date),
+                    'net_profit': net_profit,
+                    'landowner_share': owner_share,
+                    'investor_share': investor_share_total,
+                    'created_at': timezone.now()
+                }
             )
+
+            # Jika meng-update, hapus detail lama agar tidak tumpang tindih
+            if not created:
+                distribution.details.all().delete()
+            # ------------------------------------------
 
             investor_distributions = []
             for o in ownerships:
@@ -91,15 +100,12 @@ def production_detail(request, pk):
         serializer = ProductionSerializer(production)
         return Response(serializer.data)
 
-    # Tambahkan pengecekan role manual untuk PUT, PATCH, dan DELETE
     is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
 
     if request.method in ['PUT', 'PATCH']:
         if not is_admin:
             return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
         
-        # (Logika bisnis Anda untuk PUT/PATCH tetap di sini)
-        # ... (Saya singkat agar fokus pada izin) ...
         data = request.data.copy()
         quantity = float(data.get('quantity', production.quantity))
         unit_price = float(data.get('unit_price', production.unit_price))
@@ -111,20 +117,32 @@ def production_detail(request, pk):
             asset = production.asset
             net_profit = total_value
 
-            owner_share = net_profit * OWNER_SHARE_PERCENTAGE
+            # --- POIN 2: Ambil persentase dinamis dari Aset ---
+            owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
+            owner_share = net_profit * owner_share_percent_decimal
+            # --------------------------------------------------
+            
             investor_share_total = net_profit - owner_share
 
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1
 
-            distribution = ProfitDistribution.objects.create(
-                production=production,
-                period=str(production.date),
-                net_profit=net_profit,
-                landowner_share=owner_share,
-                investor_share=investor_share_total,
-                created_at=timezone.now()
+            # --- POIN 3: Gunakan update_or_create ---
+            distribution, created = ProfitDistribution.objects.update_or_create(
+                production=production, # Kunci unik
+                defaults={
+                    'period': str(production.date),
+                    'net_profit': net_profit,
+                    'landowner_share': owner_share,
+                    'investor_share': investor_share_total,
+                    'created_at': timezone.now()
+                }
             )
+
+            # Jika meng-update, hapus detail lama
+            if not created:
+                distribution.details.all().delete()
+            # ------------------------------------------
 
             investor_distributions = []
             for o in ownerships:

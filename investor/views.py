@@ -1,3 +1,4 @@
+# File: investor/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
@@ -12,12 +13,14 @@ def investor_list_create(request):
         investors = Investor.objects.select_related('user').all()
         serializer = InvestorSerializer(investors, many=True)
         return Response(serializer.data)
-    
+
     elif request.method == 'POST':
         serializer = InvestorSerializer(data=request.data)
         if serializer.is_valid():
-            # Set user dari request.user (user yang sedang login)
-            serializer.save(user=request.user)
+            # --- UBAH LOGIKA SAVE ---
+            # Biarkan serializer menangani field 'user' dari request.data
+            serializer.save()
+            # -----------------------
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -33,15 +36,17 @@ def investor_detail(request, pk):
     if request.method == 'GET':
         serializer = InvestorSerializer(investor)
         return Response(serializer.data)
-    
+
     elif request.method == 'PUT':
-        serializer = InvestorSerializer(investor, data=request.data, partial=True)
+        serializer = InvestorSerializer(investor, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
-            # Jangan ubah user saat update
+            # Cek apakah 'user' ada di data request dan mencegahnya jika perlu
+            # if 'user' in request.data:
+            #     return Response({'error': 'Cannot change the user associated with an investor profile.'}, status=status.HTTP_400_BAD_REQUEST)
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     elif request.method == 'DELETE':
         investor.delete()
         return Response({'message': 'Investor deleted'}, status=status.HTTP_204_NO_CONTENT)

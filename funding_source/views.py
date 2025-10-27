@@ -2,12 +2,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from authentication.permissions import IsAdminOrSuperadmin
 from .models import FundingSource
 from .serializers import FundingSourceSerializer
 # Create your views here.
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def funding_source_list(request):
     if request.method == 'GET':
         sources = FundingSource.objects.all()
@@ -23,7 +24,7 @@ def funding_source_list(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def funding_source_detail(request, pk):
     try:
         source = FundingSource.objects.get(pk=pk)
