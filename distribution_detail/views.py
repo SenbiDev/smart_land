@@ -5,7 +5,6 @@ from rest_framework.permissions import IsAuthenticated
 from .models import DistributionDetail
 from .serializers import DistributionDetailSerializer
 
-# Create your views here.
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def distribution_detail_list(request):
@@ -34,7 +33,7 @@ def distribution_detail_detail(request, pk):
         return Response(serializer.data)
     
     elif request.method == 'PUT':
-        serializer = DistributionDetailSerializer(data, request.data)
+        serializer = DistributionDetailSerializer(data, data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -43,4 +42,3 @@ def distribution_detail_detail(request, pk):
     elif request.method == 'DELETE':
         data.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-    

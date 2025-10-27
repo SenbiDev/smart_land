@@ -21,15 +21,17 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('authentication.urls')),
+    path('api/auth/', include('authentication.urls')),
     path('api/investor/', include('investor.urls')),
-    path('api/', include('asset.urls')),
+    path('api/asset/', include('asset.urls')),
     path('api/fundingsource/', include('funding_source.urls')),
     path('api/funding/', include('funding.urls')),
     path('api/ownership/', include('ownership.urls')),
     path('api/production/', include('production.urls')),
     path('api/profit-distribution/', include('profit_distribution.urls')),
-    path('api/', include('project.urls')),
+    path('api/project/', include('project.urls')),
     path('api/expense/', include('expense.urls')),
     path('api/distributiondetail/', include('distribution_detail.urls')),
+    path('api/reporting/', include('reporting.urls')),
+    path('api/dashboard/', include('dashboard.urls')),
 ]

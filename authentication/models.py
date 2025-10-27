@@ -13,7 +13,7 @@ class CustomUser(AbstractUser):
         ('Investor', 'Investor'),
         ('Viewer', 'Viewer'),
     ]
-    role = models.CharField(max_length=100, choices=ROLE_CHOICES, default='user')
+    role = models.CharField(max_length=100, choices=ROLE_CHOICES, default='Viewer')
 
     groups = models.ManyToManyField(
         Group,
