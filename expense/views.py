@@ -5,20 +5,12 @@ from rest_framework import status, permissions
 from django.db.models import Sum
 from .models import Expense
 from .serializers import ExpenseSerializer
-<<<<<<< HEAD
-from funding.models import Funding
-
-@api_view(['GET', 'POST'])
-@permission_classes([permissions.IsAuthenticated])
-def expense_list_create(request):
-=======
 # Impor izin kustom baru
 from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
 def list_expense(request):
->>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
     if request.method == 'GET':
         project_id = request.GET.get('project_id') 
         funding_id = request.GET.get('funding_id')
