@@ -5,7 +5,6 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Funding
 from .serializers import FundingSerializer
 
-# Create your views here.
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def funding_list(request):
@@ -35,7 +34,7 @@ def funding_detail(request, pk):
         return Response(serializer.data)
 
     elif request.method == 'PUT':
-        serializer = FundingSerializer(data, request.data)
+        serializer = FundingSerializer(data, data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)

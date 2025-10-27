@@ -22,7 +22,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ('username', 'email', 'password', 'password2', 'role')
         extra_kwargs = {
-            'role': {'required': False, 'default': 'user'}
+            'role': {'required': False, 'default': 'Viewer'}
         }
     
     def validate(self, attrs):
@@ -36,7 +36,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user = CustomUser.objects.create(
             username=validated_data['username'],
             email=validated_data['email'],
-            role=validated_data.get('role', 'user')
+            role=validated_data.get('role', 'Viewer')
         )
         user.set_password(validated_data['password'])
         user.save()

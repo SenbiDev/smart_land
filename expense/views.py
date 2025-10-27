@@ -1,14 +1,24 @@
+# File: senbidev/smart_land/smart_land-faiz/expense/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from django.db.models import Sum
 from .models import Expense
 from .serializers import ExpenseSerializer
+<<<<<<< HEAD
 from funding.models import Funding
 
 @api_view(['GET', 'POST'])
 @permission_classes([permissions.IsAuthenticated])
 def expense_list_create(request):
+=======
+# Impor izin kustom baru
+from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
+def list_expense(request):
+>>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
     if request.method == 'GET':
         project_id = request.GET.get('project_id') 
         funding_id = request.GET.get('funding_id')
@@ -60,8 +70,13 @@ def expense_list_create(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
+<<<<<<< HEAD
 @permission_classes([permissions.IsAuthenticated])
 def expense_detail_update_delete(request, pk):
+=======
+@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (detail)
+def expense_detail(request, pk):
+>>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
     try:
         expense = Expense.objects.get(pk=pk)
     except Expense.DoesNotExist:
@@ -71,8 +86,18 @@ def expense_detail_update_delete(request, pk):
         serializer = ExpenseSerializer(expense)
         return Response(serializer.data)
 
+<<<<<<< HEAD
     elif request.method == 'PUT':
         old_amount = expense.amount
+=======
+    # Tambahkan pengecekan role manual untuk PUT dan DELETE
+    is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
+
+    if request.method == 'PUT':
+        if not is_admin:
+            return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
+        
+>>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
         serializer = ExpenseSerializer(expense, data=request.data)
         if serializer.is_valid():
             new_amount = serializer.validated_data['amount']
@@ -102,6 +127,7 @@ def expense_detail_update_delete(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+<<<<<<< HEAD
         funding = expense.funding_id
         refund_amount = expense.amount
         funding.amount += refund_amount
@@ -129,3 +155,10 @@ def funding_expense_summary(request, funding_id):
         'remaining_amount': funding.amount - total,
         'expenses': serializer.data
     })
+=======
+        if not is_admin:
+            return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        expense.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+>>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
