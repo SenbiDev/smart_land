@@ -62,13 +62,8 @@ def list_expense(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-<<<<<<< HEAD
-@permission_classes([permissions.IsAuthenticated])
-def expense_detail_update_delete(request, pk):
-=======
 @permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (detail)
 def expense_detail(request, pk):
->>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
     try:
         expense = Expense.objects.get(pk=pk)
     except Expense.DoesNotExist:
@@ -78,10 +73,6 @@ def expense_detail(request, pk):
         serializer = ExpenseSerializer(expense)
         return Response(serializer.data)
 
-<<<<<<< HEAD
-    elif request.method == 'PUT':
-        old_amount = expense.amount
-=======
     # Tambahkan pengecekan role manual untuk PUT dan DELETE
     is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
 
@@ -89,7 +80,6 @@ def expense_detail(request, pk):
         if not is_admin:
             return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
         
->>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
         serializer = ExpenseSerializer(expense, data=request.data)
         if serializer.is_valid():
             new_amount = serializer.validated_data['amount']
@@ -119,38 +109,8 @@ def expense_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-<<<<<<< HEAD
-        funding = expense.funding_id
-        refund_amount = expense.amount
-        funding.amount += refund_amount
-        funding.save()
-        expense.delete()
-        return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
-
-
-@api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def funding_expense_summary(request, funding_id):
-    try:
-        funding = Funding.objects.get(id=funding_id)
-    except Funding.DoesNotExist:
-        return Response({'error': 'Funding not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    expenses = Expense.objects.filter(funding_id=funding_id)
-    total = expenses.aggregate(total=Sum('amount'))['total'] or 0
-    serializer = ExpenseSerializer(expenses, many=True)
-
-    return Response({
-        'funding_id': funding_id,
-        'funding_amount': funding.amount,
-        'total_expense': total,
-        'remaining_amount': funding.amount - total,
-        'expenses': serializer.data
-    })
-=======
         if not is_admin:
             return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
         
         expense.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
->>>>>>> 81605ad0fdd8bc04bc9e0ea82437994b41368ecf
