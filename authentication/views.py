@@ -9,6 +9,12 @@ from .models import CustomUser
 from .serializers import RegisterSerializer # Import serializer yang sudah diperbaiki
 from django.contrib.auth import authenticate
 from django.conf import settings
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from .models import CustomUser
+from .serializers import UserSerializer
 
 # ... (fungsi set_auth_cookies dan set_user_cookie tetap sama) ...
 def set_auth_cookies(response, refresh_token):
@@ -159,3 +165,54 @@ def refresh_view(request):
         return Response({'error': 'Invalid refresh token'}, status=status.HTTP_401_UNAUTHORIZED)
     except CustomUser.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+# Permission khusus Superadmin
+class IsSuperadmin(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.role == 'Superadmin'
+
+# List & Create User (Superadmin only)
+@api_view(['GET', 'POST'])
+@permission_classes([IsSuperadmin])
+def user_list_create(request):
+    if request.method == 'GET':
+        users = CustomUser.objects.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            user.set_password(request.data.get('password'))
+            user.save()
+            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Detail, Update, Delete User
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsSuperadmin])
+def user_detail(request, pk):
+    try:
+        user = CustomUser.objects.get(pk=pk)
+    except CustomUser.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            # Jika ada password baru, hash-kan
+            if 'password' in request.data:
+                user.set_password(request.data['password'])
+                user.save()
+            return Response(UserSerializer(user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
