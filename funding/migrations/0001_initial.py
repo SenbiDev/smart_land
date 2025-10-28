@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
                 ('amount', models.DecimalField(decimal_places=2, max_digits=15)),
                 ('date_received', models.DateField()),
                 ('purpose', models.TextField()),
-                ('status', models.CharField(choices=[('avaliable', 'Tersedia'), ('allocated', 'Teralokasi'), ('used', 'Terpakai')], max_length=50)),
+                ('status', models.CharField(choices=[('available', 'Tersedia'), ('allocated', 'Teralokasi'), ('used', 'Terpakai')], max_length=50)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('source', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='fundings', to='funding_source.fundingsource')),
             ],
