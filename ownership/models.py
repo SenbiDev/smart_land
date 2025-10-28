@@ -14,3 +14,6 @@ class Ownership(models.Model):
 
     def __str__(self):
         return f"{self.investor.user.username} - {self.asset.name} ({self.units} units)"
+    
+    class Meta:
+        ordering = ['-ownership_percentage']
