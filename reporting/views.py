@@ -1,50 +1,153 @@
-# File: reporting/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status as http_status
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Sum, F, DecimalField, Q, Count
-from django.db.models.functions import ExtractMonth, ExtractYear
+from django.db.models.functions import Coalesce, TruncMonth, ExtractQuarter, ExtractYear
+from decimal import Decimal
+import datetime
+from collections import defaultdict # Untuk merge data
+
+# Import semua model yang diperlukan
 from funding.models import Funding
 from expense.models import Expense
 from production.models import Production
 from ownership.models import Ownership 
 from investor.models import Investor
-from decimal import Decimal
+# (Asumsi Anda juga memiliki model Project, jika tidak, hapus filter 'project_id')
+# from project.models import Project 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def laporan_keuangan(request):
+# --- FUNGSI HELPER UTAMA UNTUK FILTER ---
+
+def get_filtered_querysets(request):
+    """
+    Satu fungsi untuk mendapatkan semua queryset dasar, 
+    sudah difilter berdasarkan role user DAN query params.
+    """
     user = request.user
-    total_dana = 0
-    total_pengeluaran = 0
-    total_yield = 0
+    
+    # Ambil query params
+    asset_id = request.GET.get('asset')
+    project_id = request.GET.get('project')
+    period = request.GET.get('period') # Format 'YYYY-MM', 'YYYY-Qn', atau 'YYYY'
 
+    # Queryset dasar
+    fundings_qs = Funding.objects.all()
+    expenses_qs = Expense.objects.all()
+    productions_qs = Production.objects.all()
+    ownerships_qs = Ownership.objects.all()
+
+    # --- 1. Filter berdasarkan Role Investor ---
     if user.role == 'Investor':
         try:
             investor = user.investor
             investor_ownerships = Ownership.objects.filter(investor=investor)
             asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
             funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
-
-            total_dana = Funding.objects.filter(id__in=funding_ids).aggregate(total=Sum('amount'))['total'] or 0
-            total_pengeluaran = Expense.objects.filter(
+            
+            # Filter queryset dasar HANYA untuk data investor
+            fundings_qs = fundings_qs.filter(id__in=funding_ids)
+            expenses_qs = expenses_qs.filter(
                 Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
-            ).distinct().aggregate(total=Sum('amount'))['total'] or 0
-            total_yield = Production.objects.filter(asset_id__in=asset_ids).aggregate(
-                total=Sum(F('quantity') * F('unit_price'), output_field=DecimalField())
-            )['total'] or 0
+            ).distinct()
+            productions_qs = productions_qs.filter(asset_id__in=asset_ids)
+            ownerships_qs = ownerships_qs.filter(investor=investor)
+            
         except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
-    else:
-        total_dana = Funding.objects.aggregate(total=Sum('amount'))['total'] or 0
-        total_pengeluaran = Expense.objects.aggregate(total=Sum('amount'))['total'] or 0
-        total_yield = Production.objects.aggregate(
-            total=Sum(F('quantity') * F('unit_price'), output_field=DecimalField())
-        )['total'] or 0
+            # Jika profil investor tidak ada, return queryset kosong
+            return (Funding.objects.none(), Expense.objects.none(), 
+                    Production.objects.none(), Ownership.objects.none())
+
+    # --- 2. Filter berdasarkan Query Params (Aset, Proyek, Periode) ---
+
+    # Filter Aset
+    if asset_id and asset_id != 'all':
+        try:
+            asset_id_int = int(asset_id)
+            expenses_qs = expenses_qs.filter(asset_id=asset_id_int)
+            productions_qs = productions_qs.filter(asset_id=asset_id_int)
+            ownerships_qs = ownerships_qs.filter(asset_id=asset_id_int)
+            # Funding terkait ownership, jadi filter funding berdasarkan ownerships
+            funding_ids_from_asset = Ownership.objects.filter(asset_id=asset_id_int).values_list('funding_id', flat=True)
+            fundings_qs = fundings_qs.filter(id__in=funding_ids_from_asset)
+        except (ValueError, TypeError):
+            pass # Abaikan jika asset_id tidak valid
+
+    # Filter Proyek
+    if project_id and project_id != 'all':
+        try:
+            project_id_int = int(project_id)
+            # Proyek biasanya terkait dengan Pengeluaran
+            expenses_qs = expenses_qs.filter(project_id=project_id_int)
+            # (Jika model Production juga punya FK ke Project, tambahkan di sini)
+            # productions_qs = productions_qs.filter(project_id=project_id_int) 
+        except (ValueError, TypeError):
+            pass
+
+    # Filter Periode
+    if period and period != 'all':
+        try:
+            year, month, quarter = None, None, None
+            date_filters = {}
+            funding_date_filters = {}
+
+            if 'Q' in period: # Format YYYY-Qn
+                year_str, quarter_str = period.split('-')
+                year = int(year_str)
+                quarter = int(quarter_str[1])
+                month_start = (quarter - 1) * 3 + 1
+                month_end = quarter * 3
+                
+                date_filters = {'date__year': year, 'date__month__gte': month_start, 'date__month__lte': month_end}
+                funding_date_filters = {'date_received__year': year, 'date_received__month__gte': month_start, 'date_received__month__lte': month_end}
+
+            elif '-' in period: # Format YYYY-MM
+                year_str, month_str = period.split('-')
+                year = int(year_str)
+                month = int(month_str)
+                
+                date_filters = {'date__year': year, 'date__month': month}
+                funding_date_filters = {'date_received__year': year, 'date_received__month': month}
+                
+            else: # Format YYYY
+                year = int(period)
+                date_filters = {'date__year': year}
+                funding_date_filters = {'date_received__year': year}
+
+            if date_filters:
+                fundings_qs = fundings_qs.filter(**funding_date_filters)
+                expenses_qs = expenses_qs.filter(**date_filters)
+                productions_qs = productions_qs.filter(**date_filters)
+
+        except (ValueError, TypeError, IndexError):
+            pass # Abaikan jika format periode tidak valid
+
+    return fundings_qs, expenses_qs, productions_qs, ownerships_qs
+
+
+# --- ENDPOINT VIEWS (Sudah direfactor) ---
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def laporan_keuangan(request):
+    # Cukup panggil helper
+    fundings_qs, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
+
+    # Gunakan Coalesce untuk menghindari None saat Sum() kosong
+    total_dana = fundings_qs.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    total_pengeluaran = expenses_qs.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    total_yield = productions_qs.aggregate(
+        total_value=Coalesce(Sum(F('quantity') * F('unit_price')), Decimal(0), output_field=DecimalField())
+    )['total_value'] # Ganti nama key 'total'
 
     laba_rugi = total_yield - total_pengeluaran
-    sisa_dana = total_dana - total_pengeluaran
+    sisa_dana = total_dana - total_pengeluaran # (Asumsi sisa dana = total funding - total expense)
 
     if laba_rugi > 0:
         status_keuangan = "Laba"
@@ -67,199 +170,170 @@ def laporan_keuangan(request):
     }
     return Response(data, status=http_status.HTTP_200_OK)
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def pengeluaran_per_kategori(request):
-    user = request.user
+    # Cukup panggil helper
+    _, expenses_qs, _, _ = get_filtered_querysets(request)
     
-    if user.role == 'Investor':
-        try:
-            investor = user.investor
-            investor_ownerships = Ownership.objects.filter(investor=investor)
-            asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
-            funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
-            expenses = Expense.objects.filter(
-                Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
-            ).distinct()
-        except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
-    else:
-        expenses = Expense.objects.all()
-    
-    category_data = expenses.values('category').annotate(
-        total=Sum('amount')
+    category_data = expenses_qs.values('category').annotate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
     ).order_by('-total')
     
+    # Sesuaikan key di result agar konsisten
     result = [
-        {"category": item['category'] or 'Lainnya', "amount": float(item['total'])}
-        for item in category_data
+        {"category": item['category'] or 'Lainnya', "total": float(item['total'])}
+        for item in category_data if item['total'] > 0
     ]
     return Response(result, status=http_status.HTTP_200_OK)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def top_pengeluaran(request):
-    user = request.user
+    # Cukup panggil helper
+    _, expenses_qs, _, _ = get_filtered_querysets(request)
     
-    if user.role == 'Investor':
-        try:
-            investor = user.investor
-            investor_ownerships = Ownership.objects.filter(investor=investor)
-            asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
-            funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
-            expenses = Expense.objects.filter(
-                Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
-            ).distinct()
-        except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
-    else:
-        expenses = Expense.objects.all()
-    
-    top_expenses = expenses.select_related('asset_id', 'funding_id').order_by('-amount')[:5]
+    # Gunakan .values() untuk data yang lebih bersih
+    top_expenses = expenses_qs.order_by('-amount').values(
+        'id', 'amount', 'description', 'date', 'category', 
+        'asset_id__name', 'project_id__name' # Ambil nama relasi
+    )[:5]
     
     result = [
         {
-            "id": exp.id,
-            "amount": float(exp.amount),
-            "description": exp.description,
-            "asset": exp.asset_id.name if exp.asset_id else None,
-            "funding": f"Funding #{exp.funding_id.id}" if exp.funding_id else None,
-            "date": exp.date.isoformat(),
-            "category": exp.category
+            "id": exp['id'],
+            "amount": float(exp['amount']),
+            "description": exp['description'],
+            "asset": exp['asset_id__name'], # Nama aset
+            "project": exp['project_id__name'], # Nama proyek
+            "date": exp['date'].isoformat(),
+            "category": exp['category']
         }
         for exp in top_expenses
     ]
     return Response(result, status=http_status.HTTP_200_OK)
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def pendapatan_vs_pengeluaran(request):
-    user = request.user
+    # Cukup panggil helper
+    _, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
     
-    if user.role == 'Investor':
-        try:
-            investor = user.investor
-            investor_ownerships = Ownership.objects.filter(investor=investor)
-            asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
-            funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
-            productions = Production.objects.filter(asset_id__in=asset_ids)
-            expenses = Expense.objects.filter(
-                Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
-            ).distinct()
-        except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
-    else:
-        productions = Production.objects.all()
-        expenses = Expense.objects.all()
+    # Group production by month menggunakan DB
+    monthly_income_data = productions_qs.annotate(
+        month=TruncMonth('date')
+    ).values('month').annotate(
+        total_income=Coalesce(Sum(F('quantity') * F('unit_price')), Decimal(0), output_field=DecimalField())
+    ).order_by('month')
     
-    # PERBAIKAN: Gunakan annotate untuk grouping
-    from django.db.models.functions import TruncMonth
-    from datetime import datetime
+    # Group expenses by month menggunakan DB
+    monthly_expense_data = expenses_qs.annotate(
+        month=TruncMonth('date')
+    ).values('month').annotate(
+        total_expense=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    ).order_by('month')
+
+    # Gabungkan data di Python
+    data_map = defaultdict(lambda: {"income": 0, "expense": 0})
     
-    # Group production by month
-    monthly_income = {}
-    for prod in productions.select_related('asset'):
-        month_key = prod.date.strftime('%Y-%m')
-        total_value = float(prod.quantity) * float(prod.unit_price)
-        if month_key not in monthly_income:
-            monthly_income[month_key] = 0
-        monthly_income[month_key] += total_value
+    for item in monthly_income_data:
+        month_key = item['month'].strftime('%Y-%m')
+        data_map[month_key]["income"] = float(item['total_income'])
+        
+    for item in monthly_expense_data:
+        month_key = item['month'].strftime('%Y-%m')
+        data_map[month_key]["expense"] = float(item['total_expense'])
+        
+    # Urutkan berdasarkan key (bulan)
+    sorted_months = sorted(data_map.keys())
     
-    # Group expenses by month
-    monthly_expense = {}
-    for exp in expenses:
-        month_key = exp.date.strftime('%Y-%m')
-        if month_key not in monthly_expense:
-            monthly_expense[month_key] = 0
-        monthly_expense[month_key] += float(exp.amount)
-    
-    # Combine all months
-    all_months = sorted(set(list(monthly_income.keys()) + list(monthly_expense.keys())))
-    
-    # Take last 6 months
-    result = []
-    for month in all_months[-6:]:
-        result.append({
+    result = [
+        {
             "month": month,
-            "income": monthly_income.get(month, 0),
-            "expense": monthly_expense.get(month, 0)
-        })
-    
+            "income": data_map[month]["income"],
+            "expense": data_map[month]["expense"]
+        }
+        for month in sorted_months
+    ]
+
+    # Hapus slice '[-6:]' agar filter periode berfungsi
     return Response(result, status=http_status.HTTP_200_OK)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def ringkasan_kuartal(request):
-    user = request.user
+    # Cukup panggil helper
+    fundings_qs, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
+
+    # Helper untuk agregasi per kuartal
+    def aggregate_by_quarter(queryset, date_field, sum_field):
+        return queryset.annotate(
+            year=ExtractYear(date_field),
+            quarter=ExtractQuarter(date_field)
+        ).values('year', 'quarter').annotate(
+            total=Coalesce(Sum(sum_field), Decimal(0), output_field=DecimalField())
+        ).order_by('year', 'quarter')
+
+    # Agregasi data
+    funding_q = aggregate_by_quarter(fundings_qs, 'date_received', 'amount')
+    expense_q = aggregate_by_quarter(expenses_qs, 'date', 'amount')
+    yield_q = aggregate_by_quarter(productions_qs, 'date', F('quantity') * F('unit_price'))
+
+    # Gabungkan data
+    data_map = defaultdict(lambda: {"funding": 0, "expense": 0, "yield": 0})
     
-    if user.role == 'Investor':
-        try:
-            investor = user.investor
-            investor_ownerships = Ownership.objects.filter(investor=investor)
-            asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
-            funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
-            fundings = Funding.objects.filter(id__in=funding_ids)
-            expenses = Expense.objects.filter(
-                Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
-            ).distinct()
-            productions = Production.objects.filter(asset_id__in=asset_ids)
-        except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
-    else:
-        fundings = Funding.objects.all()
-        expenses = Expense.objects.all()
-        productions = Production.objects.all()
-    
-    total_funding = float(fundings.aggregate(total=Sum('amount'))['total'] or 0)
-    total_expense = float(expenses.aggregate(total=Sum('amount'))['total'] or 0)
-    total_yield = float(productions.aggregate(
-        total=Sum(F('quantity') * F('unit_price'), output_field=DecimalField())
-    )['total'] or 0)
-    
-    quarters = ['Q1-25', 'Q2-25', 'Q3-25', 'Q4-25']
+    for item in funding_q:
+        key = f"{item['year']}-Q{item['quarter']}"
+        data_map[key]["funding"] = float(item['total'])
+        
+    for item in expense_q:
+        key = f"{item['year']}-Q{item['quarter']}"
+        data_map[key]["expense"] = float(item['total'])
+        
+    for item in yield_q:
+        key = f"{item['year']}-Q{item['quarter']}"
+        data_map[key]["yield"] = float(item['total'])
+        
+    # Urutkan berdasarkan key (kuartal)
+    sorted_quarters = sorted(data_map.keys())
+
     result = []
-    for q in quarters:
-        funding_q = total_funding / 4
-        expense_q = total_expense / 4
-        yield_q = total_yield / 4
+    for q in sorted_quarters:
+        data = data_map[q]
+        net_profit = data["yield"] - data["expense"]
         result.append({
             "quarter": q,
-            "funding": funding_q,
-            "expense": expense_q,
-            "yield": yield_q,
-            "net_profit": yield_q - expense_q
+            "funding": data["funding"],
+            "expense": data["expense"],
+            "yield": data["yield"],
+            "net_profit": net_profit
         })
     
     return Response(result, status=http_status.HTTP_200_OK)
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def yield_report(request):
-    user = request.user
+    # Cukup panggil helper
+    fundings_qs, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
     
-    if user.role == 'Investor':
-        try:
-            investor = user.investor
-            investor_ownerships = Ownership.objects.filter(investor=investor)
-            asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
-            productions = Production.objects.filter(asset_id__in=asset_ids)
-            funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
-            total_investasi = Funding.objects.filter(id__in=funding_ids).aggregate(total=Sum('amount'))['total'] or 0
-            expenses = Expense.objects.filter(
-                Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
-            ).distinct()
-        except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
-    else:
-        productions = Production.objects.all()
-        total_investasi = Funding.objects.aggregate(total=Sum('amount'))['total'] or 0
-        expenses = Expense.objects.all()
+    total_investasi = fundings_qs.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
     
-    total_yield = productions.aggregate(
-        total=Sum(F('quantity') * F('unit_price'), output_field=DecimalField())
-    )['total'] or 0
+    total_yield = productions_qs.aggregate(
+        total=Coalesce(Sum(F('quantity') * F('unit_price')), Decimal(0), output_field=DecimalField())
+    )['total']
     
-    total_expense = expenses.aggregate(total=Sum('amount'))['total'] or 0
+    total_expense = expenses_qs.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
     hasil_bersih = float(total_yield) - float(total_expense)
     margin_laba = (hasil_bersih / float(total_yield) * 100) if total_yield > 0 else 0
     
@@ -270,76 +344,71 @@ def yield_report(request):
         "margin_laba": round(margin_laba, 1)
     }, status=http_status.HTTP_200_OK)
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def investor_yield(request):
-    user = request.user
+    # Panggil helper
+    fundings_qs, _, productions_qs, ownerships_qs = get_filtered_querysets(request)
     
-    if user.role != 'Investor':
-        ownerships = Ownership.objects.select_related('investor', 'funding').all()
-    else:
-        try:
-            investor = user.investor
-            ownerships = Ownership.objects.filter(investor=investor)
-        except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
+    # 1. Hitung total yield per aset (dari produksi yang sudah difilter)
+    asset_yields = productions_qs.values('asset').annotate(
+        total_yield=Coalesce(Sum(F('quantity') * F('unit_price')), Decimal(0), output_field=DecimalField())
+    )
+    asset_yield_map = {item['asset']: item['total_yield'] for item in asset_yields}
     
-    investor_data = {}
-    for own in ownerships:
+    # 2. Ambil data funding (dari funding yang sudah difilter)
+    funding_map = {item['id']: item['amount'] for item in fundings_qs.values('id', 'amount')}
+
+    # 3. Proses ownership (dari ownerships yang sudah difilter)
+    investor_data = defaultdict(lambda: {"total_funding": Decimal(0), "total_yield": Decimal(0)})
+    
+    # Gunakan select_related untuk efisiensi
+    for own in ownerships_qs.select_related('investor__user', 'funding', 'asset'):
         investor_name = own.investor.user.username
-        if investor_name not in investor_data:
-            investor_data[investor_name] = {
-                "total_funding": 0,
-                "total_yield": 0
-            }
+        percentage = Decimal(own.ownership_percentage) / 100
         
-        investor_data[investor_name]["total_funding"] += float(own.funding.amount * Decimal(own.ownership_percentage) / 100)
+        # Akumulasi funding berdasarkan persentase kepemilikan
+        funding_amount = funding_map.get(own.funding_id, Decimal(0))
+        investor_data[investor_name]["total_funding"] += (funding_amount * percentage)
         
-        asset_yield = Production.objects.filter(asset=own.asset).aggregate(
-            total=Sum(F('quantity') * F('unit_price'), output_field=DecimalField())
-        )['total'] or 0
-        
-        investor_data[investor_name]["total_yield"] += float(asset_yield * Decimal(own.ownership_percentage) / 100)
-    
+        # Akumulasi yield berdasarkan persentase kepemilikan
+        asset_yield = asset_yield_map.get(own.asset_id, Decimal(0))
+        investor_data[investor_name]["total_yield"] += (asset_yield * percentage)
+
+    # Format hasil
     result = []
     for name, data in investor_data.items():
-        yield_percent = (data["total_yield"] / data["total_funding"] * 100) if data["total_funding"] > 0 else 0
+        total_funding_float = float(data["total_funding"])
+        total_yield_float = float(data["total_yield"])
+        yield_percent = (total_yield_float / total_funding_float * 100) if total_funding_float > 0 else 0
         result.append({
             "investor": name,
-            "total_funding": data["total_funding"],
-            "total_yield": data["total_yield"],
+            "total_funding": total_funding_float,
+            "total_yield": total_yield_float,
             "yield_percent": round(yield_percent, 1)
         })
     
     return Response(result, status=http_status.HTTP_200_OK)
 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def funding_progress(request):
-    user = request.user
+    # Cukup panggil helper
+    fundings_qs, expenses_qs, _, _ = get_filtered_querysets(request)
+
+    total_funding = fundings_qs.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
     
-    if user.role == 'Investor':
-        try:
-            investor = user.investor
-            investor_ownerships = Ownership.objects.filter(investor=investor)
-            funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
-            fundings = Funding.objects.filter(id__in=funding_ids)
-            asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
-            expenses = Expense.objects.filter(
-                Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
-            ).distinct()
-        except Investor.DoesNotExist:
-            return Response({"error": "Profil investor tidak ditemukan."}, status=404)
-    else:
-        fundings = Funding.objects.all()
-        expenses = Expense.objects.all()
+    total_expense = expenses_qs.aggregate(
+        total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+    )['total']
     
-    total_funding = fundings.aggregate(total=Sum('amount'))['total'] or 0
-    total_expense = expenses.aggregate(total=Sum('amount'))['total'] or 0
-    
-    total = float(total_funding) + float(total_expense)
-    funding_percent = (float(total_funding) / total * 100) if total > 0 else 0
-    expense_percent = (float(total_expense) / total * 100) if total > 0 else 0
+    total = total_funding + total_expense
+    funding_percent = (float(total_funding) / float(total) * 100) if total > 0 else 0
+    expense_percent = (float(total_expense) / float(total) * 100) if total > 0 else 0
     
     return Response({
         "funding": {
