@@ -94,19 +94,17 @@ def ownership_summary(request):
         asset = Asset.objects.get(id=asset_id)
         
         ownerships = Ownership.objects.filter(asset_id=asset_id)
-        total_investment= []
         
-        summary = ownerships.aaggregate(
+        summary = ownerships.aggregate(
             total_investors=Count('investor', distinct=True),
             total_units=Sum('units'),
             total_investment=Sum('funding__amount')
         )
         
         total_units = summary['total_units'] or Decimal('0')
-        if total_units > 0 :
-            price_per_unit = total_investment / total_units
-        else:
-            price_per_unit = Decimal('0')
+        total_investment = summary['total_investors'] or Decimal('0')
+        if total_units > 0:
+            price_per_unit = total_investment / total_units 
             
         data = {
             'total_investors': summary['total_investors'] or 0,
@@ -115,12 +113,12 @@ def ownership_summary(request):
             'price_per_unit': price_per_unit
         }
         
-        from .serializers import OwnershipSummarySerializiers
-        serializer = OwnershipSummarySerializiers(data)
+        from .serializers import OwnershipSummarySerializer
+        serializer = OwnershipSummarySerializer(data)
         return Response(serializer.data)
     
     except Asset.DoesNotExist:
-        return Response({'error': 'asset_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'asset not found'}, status=status.HTTP_404_NOT_FOUND)
     
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

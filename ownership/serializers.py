@@ -4,7 +4,7 @@ from decimal import Decimal
 
 class OwnershipSerializer(serializers.ModelSerializer):
     investor_name = serializers.CharField(source='investor.user.username', read_only=True)
-    asset_name = serializers.CharField(source='asset.asset_name', read_only=True)
+    asset_name = serializers.CharField(source='asset.name', read_only=True)
 
     investor_type = serializers.SerializerMethodField()
     total_investment = serializers.SerializerMethodField()
