@@ -14,6 +14,7 @@ from expense.models import Expense
 from production.models import Production
 from ownership.models import Ownership 
 from investor.models import Investor
+from project.models import Project
 # (Asumsi Anda juga memiliki model Project, jika tidak, hapus filter 'project_id')
 # from project.models import Project 
 
@@ -420,3 +421,105 @@ def funding_progress(request):
             "percent": round(expense_percent, 1)
         }
     }, status=http_status.HTTP_200_OK)
+    
+# ==================== ENDPOINT BARU: RINCIAN DANA PER PROYEK ====================
+# Sesuai dengan UI gambar: Anggaran, Total Dana Masuk, Pengeluaran, Sisa, %
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def rincian_dana_per_proyek(request):
+    """
+    Menampilkan rincian dana berdasarkan proyek:
+    - Anggaran (Project.budget)
+    - Total Dana Masuk (dari Ownership -> Funding yang terkait aset proyek)
+    - Pengeluaran (dari Expense yang terkait proyek)
+    - Sisa Dana
+    - Persentase Progress (Dana Masuk/Anggaran, Pengeluaran/Dana Masuk)
+    """
+    user = request.user
+    project_id = request.GET.get('project')
+    
+    # Base queryset proyek
+    projects_qs = Project.objects.all()
+    
+    # --- Filter khusus Investor ---
+    if user.role == 'Investor':
+        try:
+            investor = user.investor
+            owned_asset_ids = Ownership.objects.filter(investor=investor).values_list('asset_id', flat=True).distinct()
+            
+            # Proyek yang terkait dengan aset yang dimiliki investor (via Expense)
+            relevant_project_ids = Expense.objects.filter(
+                asset_id__in=owned_asset_ids,
+                project_id__isnull=False
+            ).values_list('project_id', flat=True).distinct()
+            
+            projects_qs = projects_qs.filter(id__in=relevant_project_ids)
+        except Investor.DoesNotExist:
+            projects_qs = Project.objects.none()
+    
+    # --- Filter project_id jika ada ---
+    if project_id and project_id != 'all':
+        try:
+            projects_qs = projects_qs.filter(id=int(project_id))
+        except (ValueError, TypeError):
+            pass
+    
+    # --- Proses setiap proyek ---
+    result = []
+    for project in projects_qs:
+        # 1. Anggaran
+        anggaran = float(project.budget)
+        
+        # 2. Total Dana Masuk
+        # Logika: Ambil asset_id dari Expense yang terkait proyek ini
+        # Lalu sum funding dari Ownership yang berinvestasi di aset tersebut
+        asset_ids = Expense.objects.filter(project_id=project.id).values_list('asset_id', flat=True).distinct()
+        
+        total_dana_masuk = Ownership.objects.filter(
+            asset_id__in=asset_ids
+        ).aggregate(
+            total=Coalesce(Sum('funding__amount'), Decimal(0), output_field=DecimalField())
+        )['total']
+        
+        # 3. Total Pengeluaran
+        total_pengeluaran = Expense.objects.filter(
+            project_id=project.id
+        ).aggregate(
+            total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
+        )['total']
+        
+        # 4. Sisa Dana
+        sisa_dana = float(total_dana_masuk) - float(total_pengeluaran)
+        
+        # 5. Persentase
+        # Progress Bar 1: Dana Masuk/Anggaran (hijau vs abu)
+        persen_dana_masuk = (float(total_dana_masuk) / anggaran * 100) if anggaran > 0 else 0
+        persen_sisa_anggaran = 100 - persen_dana_masuk
+        
+        # Progress Bar 2: Pengeluaran/Dana Masuk (biru vs ungu)
+        persen_pengeluaran = (float(total_pengeluaran) / float(total_dana_masuk) * 100) if total_dana_masuk > 0 else 0
+        persen_sisa_dana = 100 - persen_pengeluaran
+        
+        result.append({
+            "project_id": project.id,
+            "project_name": project.name,
+            "anggaran": anggaran,
+            "total_dana_masuk": float(total_dana_masuk),
+            "total_pengeluaran": float(total_pengeluaran),
+            "sisa_dana": sisa_dana,
+            
+            # Progress Bar 1 (Dana Masuk vs Anggaran)
+            "progress_funding": {
+                "dana_masuk_percent": round(persen_dana_masuk, 1),
+                "sisa_anggaran_percent": round(persen_sisa_anggaran, 1)
+            },
+            
+            # Progress Bar 2 (Pengeluaran vs Sisa Dana)
+            "progress_expense": {
+                "pengeluaran_percent": round(persen_pengeluaran, 1),
+                "sisa_dana_percent": round(persen_sisa_dana, 1)
+            }
+        })
+    
+    return Response(result, status=http_status.HTTP_200_OK)
