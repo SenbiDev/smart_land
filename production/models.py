@@ -3,6 +3,7 @@ from asset.models import Asset
 
 # Create your models here.
 class Production(models.Model):
+    name = models.CharField(max_length=255)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='productions')
     date = models.DateField()
     quantity = models.FloatField()

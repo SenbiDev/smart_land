@@ -1,20 +1,23 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated 
 from authentication.permissions import IsAdminOrSuperadmin
 from .models import Funding
 from .serializers import FundingSerializer
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([IsAuthenticated]) 
 def funding_list(request):
     if request.method == 'GET':
         data = Funding.objects.all()
         serializer = FundingSerializer(data, many=True)
         return Response(serializer.data)
 
-    elif request.method == 'POST':
+    if request.method == 'POST':
+        if not (request.user.role == 'Admin' or request.user.role == 'Superadmin'):
+             return Response({'error': 'Hanya Admin yang dapat menambah data.'}, status=status.HTTP_403_FORBIDDEN)
+        
         serializer = FundingSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()

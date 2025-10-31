@@ -8,7 +8,7 @@ class ProfitDistribution(models.Model):
     net_profit = models.DecimalField(max_digits=20, decimal_places=2)
     landowner_share = models.DecimalField(max_digits=20, decimal_places=2)
     investor_share = models.DecimalField(max_digits=20, decimal_places=2, default=0.00)
-    created_at = models.DateTimeField(default=timezone.now)
+    distribution_date = models.DateField(default=timezone.now)
 
     def __str__(self):
         return f"Profit Distribution - {self.period} (ID: {self.id})"

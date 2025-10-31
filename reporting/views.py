@@ -1,3 +1,4 @@
+# senbidev/smart_land/smart_land-faiz/reporting/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status as http_status
@@ -14,9 +15,7 @@ from expense.models import Expense
 from production.models import Production
 from ownership.models import Ownership 
 from investor.models import Investor
-from project.models import Project
-# (Asumsi Anda juga memiliki model Project, jika tidak, hapus filter 'project_id')
-# from project.models import Project 
+from project.models import Project # <-- Import Project
 
 # --- FUNGSI HELPER UTAMA UNTUK FILTER ---
 
@@ -46,11 +45,23 @@ def get_filtered_querysets(request):
             asset_ids = investor_ownerships.values_list('asset_id', flat=True).distinct()
             funding_ids = investor_ownerships.values_list('funding_id', flat=True).distinct()
             
+            # --- PERUBAHAN LOGIKA ERD ---
+            # Dapatkan project_ids yang terkait dengan aset yang dimiliki investor
+            project_ids_from_assets = Project.objects.filter(
+                asset_id__in=asset_ids
+            ).values_list('id', flat=True)
+            # ---------------------------
+
             # Filter queryset dasar HANYA untuk data investor
             fundings_qs = fundings_qs.filter(id__in=funding_ids)
+            
+            # --- PERUBAHAN LOGIKA ERD ---
+            # Expense sekarang difilter via project_id__asset_id ATAU funding_id
             expenses_qs = expenses_qs.filter(
-                Q(asset_id__in=asset_ids) | Q(funding_id__in=funding_ids)
+                Q(project_id__id__in=project_ids_from_assets) | Q(funding_id__in=funding_ids)
             ).distinct()
+            # ---------------------------
+            
             productions_qs = productions_qs.filter(asset_id__in=asset_ids)
             ownerships_qs = ownerships_qs.filter(investor=investor)
             
@@ -65,29 +76,42 @@ def get_filtered_querysets(request):
     if asset_id and asset_id != 'all':
         try:
             asset_id_int = int(asset_id)
-            expenses_qs = expenses_qs.filter(asset_id=asset_id_int)
+            
+            # --- PERUBAHAN LOGIKA ERD ---
+            # LAMA: expenses_qs = expenses_qs.filter(asset_id=asset_id_int)
+            # BARU: Expense terikat ke Project, Project terikat ke Asset
+            expenses_qs = expenses_qs.filter(project_id__asset_id=asset_id_int)
+            # ---------------------------
+
             productions_qs = productions_qs.filter(asset_id=asset_id_int)
             ownerships_qs = ownerships_qs.filter(asset_id=asset_id_int)
-            # Funding terkait ownership, jadi filter funding berdasarkan ownerships
-            funding_ids_from_asset = Ownership.objects.filter(asset_id=asset_id_int).values_list('funding_id', flat=True)
-            fundings_qs = fundings_qs.filter(id__in=funding_ids_from_asset)
+            
+            # --- PERUBAHAN LOGIKA ERD ---
+            # LAMA: funding_ids_from_asset = Ownership.objects.filter...
+            # BARU: Funding terikat ke Project, Project terikat ke Asset
+            project_ids_from_asset = Project.objects.filter(
+                asset_id=asset_id_int
+            ).values_list('id', flat=True)
+            fundings_qs = fundings_qs.filter(project_id__in=project_ids_from_asset)
+            # ---------------------------
+
         except (ValueError, TypeError):
             pass # Abaikan jika asset_id tidak valid
 
-    # Filter Proyek
+    # Filter Proyek (Logika ini tetap sama dan valid)
     if project_id and project_id != 'all':
         try:
             project_id_int = int(project_id)
-            # Proyek biasanya terkait dengan Pengeluaran
             expenses_qs = expenses_qs.filter(project_id=project_id_int)
-            # (Jika model Production juga punya FK ke Project, tambahkan di sini)
-            # productions_qs = productions_qs.filter(project_id=project_id_int) 
+            # Funding sekarang terikat ke Project, jadi kita filter juga
+            fundings_qs = fundings_qs.filter(project_id=project_id_int)
         except (ValueError, TypeError):
             pass
 
-    # Filter Periode
+    # Filter Periode (Logika ini tetap sama dan valid)
     if period and period != 'all':
         try:
+            # ... (Tidak ada perubahan di logika filter periode) ...
             year, month, quarter = None, None, None
             date_filters = {}
             funding_date_filters = {}
@@ -126,7 +150,7 @@ def get_filtered_querysets(request):
     return fundings_qs, expenses_qs, productions_qs, ownerships_qs
 
 
-# --- ENDPOINT VIEWS (Sudah direfactor) ---
+# --- ENDPOINT VIEWS (Logika kalkulasi tidak berubah) ---
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -134,7 +158,7 @@ def laporan_keuangan(request):
     # Cukup panggil helper
     fundings_qs, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
 
-    # Gunakan Coalesce untuk menghindari None saat Sum() kosong
+    # (Tidak ada perubahan di sini)
     total_dana = fundings_qs.aggregate(
         total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
     )['total']
@@ -145,10 +169,10 @@ def laporan_keuangan(request):
     
     total_yield = productions_qs.aggregate(
         total_value=Coalesce(Sum(F('quantity') * F('unit_price')), Decimal(0), output_field=DecimalField())
-    )['total_value'] # Ganti nama key 'total'
+    )['total_value'] 
 
     laba_rugi = total_yield - total_pengeluaran
-    sisa_dana = total_dana - total_pengeluaran # (Asumsi sisa dana = total funding - total expense)
+    sisa_dana = total_dana - total_pengeluaran 
 
     if laba_rugi > 0:
         status_keuangan = "Laba"
@@ -175,14 +199,13 @@ def laporan_keuangan(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def pengeluaran_per_kategori(request):
-    # Cukup panggil helper
+    # (Tidak ada perubahan di sini)
     _, expenses_qs, _, _ = get_filtered_querysets(request)
     
     category_data = expenses_qs.values('category').annotate(
         total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
     ).order_by('-total')
     
-    # Sesuaikan key di result agar konsisten
     result = [
         {"category": item['category'] or 'Lainnya', "total": float(item['total'])}
         for item in category_data if item['total'] > 0
@@ -196,10 +219,12 @@ def top_pengeluaran(request):
     # Cukup panggil helper
     _, expenses_qs, _, _ = get_filtered_querysets(request)
     
-    # Gunakan .values() untuk data yang lebih bersih
+    # --- PERUBAHAN LOGIKA ERD ---
+    # Ambil nama aset melalui project (project_id__asset_id__name)
     top_expenses = expenses_qs.order_by('-amount').values(
         'id', 'amount', 'description', 'date', 'category', 
-        'asset_id__name', 'project_id__name' # Ambil nama relasi
+        'project_id__asset_id__name', # <-- BARU
+        'project_id__name'
     )[:5]
     
     result = [
@@ -207,37 +232,35 @@ def top_pengeluaran(request):
             "id": exp['id'],
             "amount": float(exp['amount']),
             "description": exp['description'],
-            "asset": exp['asset_id__name'], # Nama aset
-            "project": exp['project_id__name'], # Nama proyek
+            "asset": exp['project_id__asset_id__name'], # <-- BARU
+            "project": exp['project_id__name'],
             "date": exp['date'].isoformat(),
             "category": exp['category']
         }
         for exp in top_expenses
     ]
+    # ---------------------------
     return Response(result, status=http_status.HTTP_200_OK)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def pendapatan_vs_pengeluaran(request):
-    # Cukup panggil helper
+    # (Tidak ada perubahan di sini, logika grouping per bulan tetap sama)
     _, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
     
-    # Group production by month menggunakan DB
     monthly_income_data = productions_qs.annotate(
         month=TruncMonth('date')
     ).values('month').annotate(
         total_income=Coalesce(Sum(F('quantity') * F('unit_price')), Decimal(0), output_field=DecimalField())
     ).order_by('month')
     
-    # Group expenses by month menggunakan DB
     monthly_expense_data = expenses_qs.annotate(
         month=TruncMonth('date')
     ).values('month').annotate(
         total_expense=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
     ).order_by('month')
 
-    # Gabungkan data di Python
     data_map = defaultdict(lambda: {"income": 0, "expense": 0})
     
     for item in monthly_income_data:
@@ -248,7 +271,6 @@ def pendapatan_vs_pengeluaran(request):
         month_key = item['month'].strftime('%Y-%m')
         data_map[month_key]["expense"] = float(item['total_expense'])
         
-    # Urutkan berdasarkan key (bulan)
     sorted_months = sorted(data_map.keys())
     
     result = [
@@ -260,17 +282,15 @@ def pendapatan_vs_pengeluaran(request):
         for month in sorted_months
     ]
 
-    # Hapus slice '[-6:]' agar filter periode berfungsi
     return Response(result, status=http_status.HTTP_200_OK)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def ringkasan_kuartal(request):
-    # Cukup panggil helper
+    # (Tidak ada perubahan di sini, logika grouping per kuartal tetap sama)
     fundings_qs, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
 
-    # Helper untuk agregasi per kuartal
     def aggregate_by_quarter(queryset, date_field, sum_field):
         return queryset.annotate(
             year=ExtractYear(date_field),
@@ -279,12 +299,10 @@ def ringkasan_kuartal(request):
             total=Coalesce(Sum(sum_field), Decimal(0), output_field=DecimalField())
         ).order_by('year', 'quarter')
 
-    # Agregasi data
     funding_q = aggregate_by_quarter(fundings_qs, 'date_received', 'amount')
     expense_q = aggregate_by_quarter(expenses_qs, 'date', 'amount')
     yield_q = aggregate_by_quarter(productions_qs, 'date', F('quantity') * F('unit_price'))
 
-    # Gabungkan data
     data_map = defaultdict(lambda: {"funding": 0, "expense": 0, "yield": 0})
     
     for item in funding_q:
@@ -299,7 +317,6 @@ def ringkasan_kuartal(request):
         key = f"{item['year']}-Q{item['quarter']}"
         data_map[key]["yield"] = float(item['total'])
         
-    # Urutkan berdasarkan key (kuartal)
     sorted_quarters = sorted(data_map.keys())
 
     result = []
@@ -320,7 +337,7 @@ def ringkasan_kuartal(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def yield_report(request):
-    # Cukup panggil helper
+    # (Tidak ada perubahan di sini)
     fundings_qs, expenses_qs, productions_qs, _ = get_filtered_querysets(request)
     
     total_investasi = fundings_qs.aggregate(
@@ -349,35 +366,29 @@ def yield_report(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def investor_yield(request):
-    # Panggil helper
+    # (Tidak ada perubahan di sini, logika ini bergantung pada Ownership,
+    # yang filternya sudah benar di get_filtered_querysets)
     fundings_qs, _, productions_qs, ownerships_qs = get_filtered_querysets(request)
     
-    # 1. Hitung total yield per aset (dari produksi yang sudah difilter)
     asset_yields = productions_qs.values('asset').annotate(
         total_yield=Coalesce(Sum(F('quantity') * F('unit_price')), Decimal(0), output_field=DecimalField())
     )
     asset_yield_map = {item['asset']: item['total_yield'] for item in asset_yields}
     
-    # 2. Ambil data funding (dari funding yang sudah difilter)
     funding_map = {item['id']: item['amount'] for item in fundings_qs.values('id', 'amount')}
 
-    # 3. Proses ownership (dari ownerships yang sudah difilter)
     investor_data = defaultdict(lambda: {"total_funding": Decimal(0), "total_yield": Decimal(0)})
     
-    # Gunakan select_related untuk efisiensi
     for own in ownerships_qs.select_related('investor__user', 'funding', 'asset'):
         investor_name = own.investor.user.username
         percentage = Decimal(own.ownership_percentage) / 100
         
-        # Akumulasi funding berdasarkan persentase kepemilikan
         funding_amount = funding_map.get(own.funding_id, Decimal(0))
         investor_data[investor_name]["total_funding"] += (funding_amount * percentage)
         
-        # Akumulasi yield berdasarkan persentase kepemilikan
         asset_yield = asset_yield_map.get(own.asset_id, Decimal(0))
         investor_data[investor_name]["total_yield"] += (asset_yield * percentage)
 
-    # Format hasil
     result = []
     for name, data in investor_data.items():
         total_funding_float = float(data["total_funding"])
@@ -396,7 +407,7 @@ def investor_yield(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def funding_progress(request):
-    # Cukup panggil helper
+    # (Tidak ada perubahan di sini)
     fundings_qs, expenses_qs, _, _ = get_filtered_querysets(request)
 
     total_funding = fundings_qs.aggregate(
@@ -423,23 +434,17 @@ def funding_progress(request):
     }, status=http_status.HTTP_200_OK)
     
 # ==================== ENDPOINT BARU: RINCIAN DANA PER PROYEK ====================
-# Sesuai dengan UI gambar: Anggaran, Total Dana Masuk, Pengeluaran, Sisa, %
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def rincian_dana_per_proyek(request):
     """
     Menampilkan rincian dana berdasarkan proyek:
-    - Anggaran (Project.budget)
-    - Total Dana Masuk (dari Ownership -> Funding yang terkait aset proyek)
-    - Pengeluaran (dari Expense yang terkait proyek)
-    - Sisa Dana
-    - Persentase Progress (Dana Masuk/Anggaran, Pengeluaran/Dana Masuk)
+    (Logika diperbarui untuk ERD baru)
     """
     user = request.user
     project_id = request.GET.get('project')
     
-    # Base queryset proyek
     projects_qs = Project.objects.all()
     
     # --- Filter khusus Investor ---
@@ -448,11 +453,13 @@ def rincian_dana_per_proyek(request):
             investor = user.investor
             owned_asset_ids = Ownership.objects.filter(investor=investor).values_list('asset_id', flat=True).distinct()
             
-            # Proyek yang terkait dengan aset yang dimiliki investor (via Expense)
-            relevant_project_ids = Expense.objects.filter(
-                asset_id__in=owned_asset_ids,
-                project_id__isnull=False
-            ).values_list('project_id', flat=True).distinct()
+            # --- PERUBAHAN LOGIKA ERD ---
+            # LAMA: relevant_project_ids = Expense.objects.filter(...)
+            # BARU: Project sekarang terikat langsung ke Asset
+            relevant_project_ids = Project.objects.filter(
+                asset_id__in=owned_asset_ids
+            ).values_list('id', flat=True).distinct()
+            # ---------------------------
             
             projects_qs = projects_qs.filter(id__in=relevant_project_ids)
         except Investor.DoesNotExist:
@@ -467,22 +474,22 @@ def rincian_dana_per_proyek(request):
     
     # --- Proses setiap proyek ---
     result = []
-    for project in projects_qs:
+    for project in projects_qs.select_related('asset'): # Optimasi query
         # 1. Anggaran
         anggaran = float(project.budget)
         
         # 2. Total Dana Masuk
-        # Logika: Ambil asset_id dari Expense yang terkait proyek ini
-        # Lalu sum funding dari Ownership yang berinvestasi di aset tersebut
-        asset_ids = Expense.objects.filter(project_id=project.id).values_list('asset_id', flat=True).distinct()
-        
-        total_dana_masuk = Ownership.objects.filter(
-            asset_id__in=asset_ids
+        # --- PERUBAHAN LOGIKA ERD ---
+        # LAMA: (Logika kompleks pakai Expense -> Ownership -> Funding)
+        # BARU: Funding sekarang terikat langsung ke Project
+        total_dana_masuk = Funding.objects.filter(
+            project_id=project.id
         ).aggregate(
-            total=Coalesce(Sum('funding__amount'), Decimal(0), output_field=DecimalField())
+            total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
         )['total']
+        # ---------------------------
         
-        # 3. Total Pengeluaran
+        # 3. Total Pengeluaran (Logika ini tetap sama)
         total_pengeluaran = Expense.objects.filter(
             project_id=project.id
         ).aggregate(
@@ -492,12 +499,10 @@ def rincian_dana_per_proyek(request):
         # 4. Sisa Dana
         sisa_dana = float(total_dana_masuk) - float(total_pengeluaran)
         
-        # 5. Persentase
-        # Progress Bar 1: Dana Masuk/Anggaran (hijau vs abu)
+        # 5. Persentase (Logika ini tetap sama)
         persen_dana_masuk = (float(total_dana_masuk) / anggaran * 100) if anggaran > 0 else 0
         persen_sisa_anggaran = 100 - persen_dana_masuk
         
-        # Progress Bar 2: Pengeluaran/Dana Masuk (biru vs ungu)
         persen_pengeluaran = (float(total_pengeluaran) / float(total_dana_masuk) * 100) if total_dana_masuk > 0 else 0
         persen_sisa_dana = 100 - persen_pengeluaran
         
@@ -508,14 +513,10 @@ def rincian_dana_per_proyek(request):
             "total_dana_masuk": float(total_dana_masuk),
             "total_pengeluaran": float(total_pengeluaran),
             "sisa_dana": sisa_dana,
-            
-            # Progress Bar 1 (Dana Masuk vs Anggaran)
             "progress_funding": {
                 "dana_masuk_percent": round(persen_dana_masuk, 1),
                 "sisa_anggaran_percent": round(persen_sisa_anggaran, 1)
             },
-            
-            # Progress Bar 2 (Pengeluaran vs Sisa Dana)
             "progress_expense": {
                 "pengeluaran_percent": round(persen_pengeluaran, 1),
                 "sisa_dana_percent": round(persen_sisa_dana, 1)

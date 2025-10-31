@@ -1,7 +1,7 @@
 from django.db import models
 from project.models import Project 
 from funding.models import Funding
-from asset.models import Asset
+
 # Create your models here.
 
 class Expense(models.Model):
@@ -22,7 +22,6 @@ class Expense(models.Model):
     proof_url = models.TextField(max_length=100)
     project_id = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='expense', null=True, blank=True)
     funding_id = models.ForeignKey(Funding, on_delete=models.CASCADE, related_name='expense', null=True, blank=True)
-    asset_id = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='expense', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

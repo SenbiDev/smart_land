@@ -1,4 +1,3 @@
-# File: senbidev/smart_land/smart_land-faiz/production/views.py
 from decimal import Decimal
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -12,14 +11,10 @@ from ownership.models import Ownership
 from investor.models import Investor
 from profit_distribution.models import ProfitDistribution
 from distribution_detail.models import DistributionDetail
-# Impor izin kustom baru
-from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
-
-# ❗️ DIHAPUS: Konstanta tidak lagi digunakan
-# OWNER_SHARE_PERCENTAGE = Decimal("0.10") 
+from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
+@permission_classes([IsOperatorOrAdmin])
 def production_list(request):
     if request.method == 'GET':
         productions = Production.objects.all().order_by('-date')
@@ -37,32 +32,27 @@ def production_list(request):
             asset = production.asset
             net_profit = total_value
 
-            # --- POIN 2: Ambil persentase dinamis dari Aset ---
             owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
             owner_share = net_profit * owner_share_percent_decimal
-            # --------------------------------------------------
             
             investor_share_total = net_profit - owner_share
 
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1  
 
-            # --- POIN 3: Gunakan update_or_create ---
             distribution, created = ProfitDistribution.objects.update_or_create(
-                production=production, # Kunci unik
+                production=production,
                 defaults={
                     'period': str(production.date),
                     'net_profit': net_profit,
                     'landowner_share': owner_share,
                     'investor_share': investor_share_total,
-                    'created_at': timezone.now()
+                    'distribution_date': timezone.now().date()
                 }
             )
 
-            # Jika meng-update, hapus detail lama agar tidak tumpang tindih
             if not created:
                 distribution.details.all().delete()
-            # ------------------------------------------
 
             investor_distributions = []
             for o in ownerships:
@@ -92,7 +82,7 @@ def production_list(request):
 
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (detail)
+@permission_classes([IsOperatorOrAdmin])
 def production_detail(request, pk):
     production = get_object_or_404(Production, pk=pk)
 
@@ -117,32 +107,27 @@ def production_detail(request, pk):
             asset = production.asset
             net_profit = total_value
 
-            # --- POIN 2: Ambil persentase dinamis dari Aset ---
             owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
             owner_share = net_profit * owner_share_percent_decimal
-            # --------------------------------------------------
             
             investor_share_total = net_profit - owner_share
 
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1
 
-            # --- POIN 3: Gunakan update_or_create ---
             distribution, created = ProfitDistribution.objects.update_or_create(
-                production=production, # Kunci unik
+                production=production,
                 defaults={
                     'period': str(production.date),
                     'net_profit': net_profit,
                     'landowner_share': owner_share,
                     'investor_share': investor_share_total,
-                    'created_at': timezone.now()
+                    'distribution_date': timezone.now().date()
                 }
             )
 
-            # Jika meng-update, hapus detail lama
             if not created:
                 distribution.details.all().delete()
-            # ------------------------------------------
 
             investor_distributions = []
             for o in ownerships:

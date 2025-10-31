@@ -1,14 +1,12 @@
-# File: senbidev/smart_land/smart_land-faiz/expense/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from .models import Expense
 from .serializers import ExpenseSerializer
-# Impor izin kustom baru
-from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
+from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
+@permission_classes([IsOperatorOrAdmin])
 def list_expense(request):
     if request.method == 'GET':
         expenses = Expense.objects.all()
@@ -23,7 +21,7 @@ def list_expense(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (detail)
+@permission_classes([IsOperatorOrAdmin])
 def expense_detail(request, pk):
     try:
         expense = Expense.objects.get(pk=pk)
@@ -34,7 +32,6 @@ def expense_detail(request, pk):
         serializer = ExpenseSerializer(expense)
         return Response(serializer.data)
 
-    # Tambahkan pengecekan role manual untuk PUT dan DELETE
     is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
 
     if request.method == 'PUT':
