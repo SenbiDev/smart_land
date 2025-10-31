@@ -219,12 +219,11 @@ def top_pengeluaran(request):
     # Cukup panggil helper
     _, expenses_qs, _, _ = get_filtered_querysets(request)
     
-    # --- PERUBAHAN LOGIKA ERD ---
-    # Ambil nama aset melalui project (project_id__asset_id__name)
+    # --- PERUBAHAN 1: Tambahkan 'proof_url' di .values() ---
     top_expenses = expenses_qs.order_by('-amount').values(
         'id', 'amount', 'description', 'date', 'category', 
-        'project_id__asset_id__name', # <-- BARU
-        'project_id__name'
+        'project_id__asset_id__name', 'project_id__name',
+        'proof_url' # <-- TAMBAHKAN INI
     )[:5]
     
     result = [
@@ -232,14 +231,15 @@ def top_pengeluaran(request):
             "id": exp['id'],
             "amount": float(exp['amount']),
             "description": exp['description'],
-            "asset": exp['project_id__asset_id__name'], # <-- BARU
-            "project": exp['project_id__name'],
+            "asset": exp['project_id__asset_id__name'], # Nama aset
+            "project": exp['project_id__name'], # Nama proyek
             "date": exp['date'].isoformat(),
-            "category": exp['category']
+            "category": exp['category'],
+            # --- PERUBAHAN 2: Tambahkan 'proof_url' di hasil JSON ---
+            "proof_url": exp['proof_url'] # <-- TAMBAHKAN INI
         }
         for exp in top_expenses
     ]
-    # ---------------------------
     return Response(result, status=http_status.HTTP_200_OK)
 
 
