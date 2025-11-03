@@ -25,7 +25,7 @@ class AsetSerializer(serializers.ModelSerializer):
         model = Asset
         fields = [
             'id', 'name', 'type', 'location', 'size', 'value',
-            'acquistion_date', 'ownership_status', 'document_url',
+            'acquisition_date', 'ownership_status', 'document_url',
             'landowner', 'landowner_name', 'landowner_contact',
             'landowner_share_percentage', 'total_investment',
             'investors_info', 'created_at'
@@ -52,7 +52,7 @@ class AsetCreateUpdateSerializer(serializers.ModelSerializer):
         model = Asset
         fields = [
             'name', 'type', 'location', 'size', 'value',
-            'acquistion_date', 'ownership_status', 'document_url',
+            'acquisition_date', 'ownership_status', 'document_url',
             'landowner', 'landowner_share_percentage'
         ]
     
