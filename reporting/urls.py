@@ -11,4 +11,5 @@ urlpatterns = [
     path('yield-report/', views.yield_report, name='yield-report'),
     path('investor-yield/', views.investor_yield, name='investor-yield'),
     path('funding-progress/', views.funding_progress, name='funding-progress'),
+    path('production-statistics/', views.production_statistics, name='production-statistics'),
 ]

@@ -1,4 +1,3 @@
-# senbidev/smart_land/smart_land-faiz/reporting/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status as http_status
@@ -12,7 +11,7 @@ from collections import defaultdict # Untuk merge data
 # Import semua model yang diperlukan
 from funding.models import Funding
 from expense.models import Expense
-from production.models import Production
+from production.models import Production # <-- Pastikan ini ada
 from ownership.models import Ownership 
 from investor.models import Investor
 from project.models import Project # <-- Import Project
@@ -219,11 +218,10 @@ def top_pengeluaran(request):
     # Cukup panggil helper
     _, expenses_qs, _, _ = get_filtered_querysets(request)
     
-    # --- PERUBAHAN 1: Tambahkan 'proof_url' di .values() ---
     top_expenses = expenses_qs.order_by('-amount').values(
         'id', 'amount', 'description', 'date', 'category', 
         'project_id__asset_id__name', 'project_id__name',
-        'proof_url' # <-- TAMBAHKAN INI
+        'proof_url'
     )[:5]
     
     result = [
@@ -235,8 +233,7 @@ def top_pengeluaran(request):
             "project": exp['project_id__name'], # Nama proyek
             "date": exp['date'].isoformat(),
             "category": exp['category'],
-            # --- PERUBAHAN 2: Tambahkan 'proof_url' di hasil JSON ---
-            "proof_url": exp['proof_url'] # <-- TAMBAHKAN INI
+            "proof_url": exp['proof_url'] 
         }
         for exp in top_expenses
     ]
@@ -366,8 +363,7 @@ def yield_report(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def investor_yield(request):
-    # (Tidak ada perubahan di sini, logika ini bergantung pada Ownership,
-    # yang filternya sudah benar di get_filtered_querysets)
+    # (Tidak ada perubahan di sini)
     fundings_qs, _, productions_qs, ownerships_qs = get_filtered_querysets(request)
     
     asset_yields = productions_qs.values('asset').annotate(
@@ -433,73 +429,50 @@ def funding_progress(request):
         }
     }, status=http_status.HTTP_200_OK)
     
-# ==================== ENDPOINT BARU: RINCIAN DANA PER PROYEK ====================
-
+# (Fungsi rincian_dana_per_proyek tidak berubah)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def rincian_dana_per_proyek(request):
-    """
-    Menampilkan rincian dana berdasarkan proyek:
-    (Logika diperbarui untuk ERD baru)
-    """
     user = request.user
     project_id = request.GET.get('project')
     
     projects_qs = Project.objects.all()
     
-    # --- Filter khusus Investor ---
     if user.role == 'Investor':
         try:
             investor = user.investor
             owned_asset_ids = Ownership.objects.filter(investor=investor).values_list('asset_id', flat=True).distinct()
-            
-            # --- PERUBAHAN LOGIKA ERD ---
-            # LAMA: relevant_project_ids = Expense.objects.filter(...)
-            # BARU: Project sekarang terikat langsung ke Asset
             relevant_project_ids = Project.objects.filter(
                 asset_id__in=owned_asset_ids
             ).values_list('id', flat=True).distinct()
-            # ---------------------------
-            
             projects_qs = projects_qs.filter(id__in=relevant_project_ids)
         except Investor.DoesNotExist:
             projects_qs = Project.objects.none()
     
-    # --- Filter project_id jika ada ---
     if project_id and project_id != 'all':
         try:
             projects_qs = projects_qs.filter(id=int(project_id))
         except (ValueError, TypeError):
             pass
     
-    # --- Proses setiap proyek ---
     result = []
-    for project in projects_qs.select_related('asset'): # Optimasi query
-        # 1. Anggaran
+    for project in projects_qs.select_related('asset'): 
         anggaran = float(project.budget)
         
-        # 2. Total Dana Masuk
-        # --- PERUBAHAN LOGIKA ERD ---
-        # LAMA: (Logika kompleks pakai Expense -> Ownership -> Funding)
-        # BARU: Funding sekarang terikat langsung ke Project
         total_dana_masuk = Funding.objects.filter(
             project_id=project.id
         ).aggregate(
             total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
         )['total']
-        # ---------------------------
         
-        # 3. Total Pengeluaran (Logika ini tetap sama)
         total_pengeluaran = Expense.objects.filter(
             project_id=project.id
         ).aggregate(
             total=Coalesce(Sum('amount'), Decimal(0), output_field=DecimalField())
         )['total']
         
-        # 4. Sisa Dana
         sisa_dana = float(total_dana_masuk) - float(total_pengeluaran)
         
-        # 5. Persentase (Logika ini tetap sama)
         persen_dana_masuk = (float(total_dana_masuk) / anggaran * 100) if anggaran > 0 else 0
         persen_sisa_anggaran = 100 - persen_dana_masuk
         
@@ -524,3 +497,67 @@ def rincian_dana_per_proyek(request):
         })
     
     return Response(result, status=http_status.HTTP_200_OK)
+
+    
+# ==================== ENDPOINT BARU: STATISTIK PRODUKSI ====================
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def production_statistics(request):
+    """
+    Menghitung 4 statistik untuk kartu di halaman Produksi.
+    Dapat difilter berdasarkan asset_id.
+    """
+    user = request.user
+    queryset = Production.objects.all()
+
+    # --- 1. Filter berdasarkan Role Investor ---
+    if user.role == 'Investor':
+        try:
+            # Periksa apakah profil investor ada
+            investor = user.investor
+            # Dapatkan semua asset_id yang dimiliki investor ini
+            asset_ids = Ownership.objects.filter(investor=investor).values_list('asset_id', flat=True).distinct()
+            # Filter queryset produksi
+            queryset = queryset.filter(asset_id__in=asset_ids)
+        except Investor.DoesNotExist:
+            # Jika user ber-role 'Investor' tapi profilnya tidak ada
+            queryset = Production.objects.none()
+
+    # --- 2. Filter berdasarkan Query Param 'asset' ---
+    asset_id = request.GET.get('asset')
+    if asset_id and asset_id != 'all':
+        try:
+            # Filter lebih lanjut jika user memilih aset spesifik
+            queryset = queryset.filter(asset_id=int(asset_id))
+        except (ValueError, TypeError):
+            pass # Abaikan jika asset_id tidak valid
+
+    # --- 3. Hitung 4 Statistik ---
+    
+    # 1. Total Produksi (Count)
+    total_produksi = queryset.count()
+    
+    # 2. Nilai Total (Sum dari total_value)
+    nilai_total = queryset.aggregate(
+        total=Coalesce(Sum('total_value'), Decimal(0), output_field=DecimalField())
+    )['total']
+    
+    # 3. Terjual (Sum total_value dimana status='terjual')
+    terjual = queryset.filter(status='terjual').aggregate(
+        total=Coalesce(Sum('total_value'), Decimal(0), output_field=DecimalField())
+    )['total']
+        
+    # 4. Stok (Sum total_value dimana status='stok')
+    stok = queryset.filter(status='stok').aggregate(
+        total=Coalesce(Sum('total_value'), Decimal(0), output_field=DecimalField())
+    )['total']
+
+    data = {
+        "total_produksi": total_produksi,
+        "nilai_total": nilai_total,
+        "terjual": terjual,
+        "stok": stok
+    }
+    
+    return Response(data, status=http_status.HTTP_200_OK)
