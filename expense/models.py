@@ -4,17 +4,17 @@ from funding.models import Funding
 
 class Expense(models.Model):
     CATEGORY_CHOICES = [
-        ('material', 'Material'),
-        ('tenaga kerja', 'Tenaga Kerja'),
-        ('transport', 'Transport'),
-        ('feed', 'Pakan'),
-        ('perawatan', 'Perawatan'),
-        ('tools', 'Alat dan Perlengkapan'),
-        ('other', 'Lain-Lain'),
+        ('Proyek', 'Proyek'),
+        ('Operasional', 'Operasional'),
+        ('Pembelian', 'Pembelian'),
     ]
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default='Operasional' 
+    )
 
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
-    amount = models.DecimalField(max_digits=20, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
     date = models.DateField()
     description = models.TextField(max_length=100)
     proof_url = models.TextField(max_length=100)
