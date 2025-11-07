@@ -3,16 +3,29 @@ from rest_framework.permissions import IsAuthenticated
 from authentication.permissions import IsAdminOrSuperadmin
 from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Sum
+from django.db.models import Sum, Count
+from decimal import Decimal
 from .models import Ownership
-from .serializers import OwnershipSerializer
+from .serializers import (
+    OwnershipSerializer,
+    OwnershipSummarySerializer,
+    OwnershipCompositionSerializer
+)
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAdminOrSuperadmin])
 def ownership_list(request):
     if request.method == 'GET':
-        ownership = Ownership.objects.all()
-        serializer = OwnershipSerializer(ownership, many=True)
+        ownerships = Ownership.objects.select_related(
+            'investor__user', 'asset', 'funding'
+        ).all()  # ← UBAH INI (optimize query)
+        
+        # Tambah filter by asset (opsional, biar bisa filter)
+        asset_id = request.query_params.get('asset_id')
+        if asset_id:
+            ownerships = ownerships.filter(asset_id=asset_id)
+        
+        serializer = OwnershipSerializer(ownerships, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
@@ -70,3 +83,85 @@ def ownership_detail(request, pk):
             o.save(update_fields=['ownership_percentage'])
                 
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ownership_summary(request):
+    asset_id = request.query_params.get('asset_id')
+    if not asset_id:
+        return Response({'error': 'asset_id required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        from asset.models import Asset
+        asset = Asset.objects.get(id=asset_id)
+
+        ownerships = Ownership.objects.filter(asset_id=asset_id)
+
+        summary = ownerships.aggregate(
+            total_investors=Count('investor', distinct=True),
+            total_units=Sum('units'),
+            total_investment=Sum('funding__amount')
+        )
+
+        total_units = summary['total_units'] or Decimal('0')
+        total_investment = summary['total_investment'] or Decimal('0')
+        price_per_unit = (total_investment / total_units) if total_units > 0 else Decimal('0')
+
+        data = {
+            'total_investors': summary['total_investors'] or 0,
+            'total_units': total_units,
+            'total_investment': total_investment,
+            'price_per_unit': price_per_unit
+        }
+
+        serializer = OwnershipSummarySerializer(data)
+        return Response(serializer.data)
+
+    except Asset.DoesNotExist:
+        return Response({'error': 'asset not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ownership_composition(request):
+    """Komposisi untuk pie chart & list investor"""
+    asset_id = request.query_params.get('asset_id')
+    
+    if not asset_id:
+        return Response({'error': 'asset_id required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        from asset.models import Asset
+        asset = Asset.objects.get(id=asset_id)
+        
+        ownerships = Ownership.objects.filter(
+            asset_id=asset_id
+        ).select_related('investor__user', 'funding').order_by('-ownership_percentage')
+        
+        composition = []
+        for ownership in ownerships:
+            # Deduce investor type dari username
+            username = ownership.investor.user.username.lower()
+            if 'pt' in username or 'cv' in username:
+                investor_type = 'corporate'
+            elif 'yayasan' in username:
+                investor_type = 'yayasan'
+            else:
+                investor_type = 'individual'
+            
+            composition.append({
+                'investor_id': ownership.investor.id,
+                'investor_name': ownership.investor.user.username,
+                'investor_type': investor_type,
+                'units': ownership.units,
+                'percentage': ownership.ownership_percentage,
+                'total_investment': float(ownership.funding.amount),
+                'join_date': ownership.investment_date,
+                'status': 'active'
+            })
+        
+        from .serializers import OwnershipCompositionSerializer
+        serializer = OwnershipCompositionSerializer(composition, many=True)
+        return Response(serializer.data)
+        
+    except Asset.DoesNotExist:
+        return Response({'error': 'Asset not found'}, status=status.HTTP_404_NOT_FOUND)
