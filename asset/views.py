@@ -2,38 +2,31 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
-# Corrected import for Asset and Owner
 from .models import Asset, Owner
-# Corrected import for Project (from the 'project' app)
-# from .models import Project # <<< REMOVE THIS LINE
-# Add the correct import below
-# from project.models import Project # No need to import Project here anymore, it was likely a leftover mistake.
 from .serializers import AsetSerializer, AsetCreateUpdateSerializer, OwnerSerializer
-from authentication.permissions import IsAdminOrSuperadmin # Impor izin
+from authentication.permissions import IsAdminOrSuperadmin
+from rest_framework.permissions import IsAuthenticated 
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrSuperadmin]) # GANTI INI
+@permission_classes([IsAuthenticated])
 def list_aset(request):
     assets = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').all()
     serializer = AsetSerializer(assets, many=True)
     return Response(serializer.data)
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrSuperadmin]) # GANTI INI
+@permission_classes([IsAdminOrSuperadmin]) 
 def tambah_aset(request):
     serializer = AsetCreateUpdateSerializer(data=request.data)
     if serializer.is_valid():
-        # Correctly save the instance first to get an ID
         asset_instance = serializer.save()
-        # Fetch the full instance with related data for the response serializer
-        # Note: 'id' might not be directly in serializer.data if it's read-only
         asset = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').get(pk=asset_instance.id)
         return_serializer = AsetSerializer(asset)
         return Response(return_serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin]) # GANTI INI
+@permission_classes([IsAdminOrSuperadmin]) 
 def asset_detail(request, pk):
     try:
         asset = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').get(pk=pk)
@@ -48,9 +41,7 @@ def asset_detail(request, pk):
         serializer = AsetCreateUpdateSerializer(asset, data=request.data)
         if serializer.is_valid():
             serializer.save()
-            # Return dengan serializer lengkap
-            asset.refresh_from_db() # Refresh instance after save
-            # Re-fetch with related data might be safer depending on serializer setup
+            asset.refresh_from_db()
             updated_asset = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').get(pk=pk)
             return_serializer = AsetSerializer(updated_asset)
             return Response(return_serializer.data)
@@ -59,8 +50,6 @@ def asset_detail(request, pk):
     elif request.method == 'DELETE':
         asset.delete()
         return Response({'message': 'Asset deleted'}, status=status.HTTP_204_NO_CONTENT)
-
-# ========== OWNER ENDPOINTS ==========
 
 @api_view(['GET'])
 @permission_classes([IsAdminOrSuperadmin])

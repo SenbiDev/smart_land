@@ -1,55 +1,93 @@
-# File: senbidev/smart_land/smart_land-faiz/expense/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from django.db.models import Q
 from .models import Expense
-from .serializers import ExpenseSerializer
-# Impor izin kustom baru
-from authentication.permissions import IsAdminOrSuperadmin, IsOpratorOrAdmin
+from .serializers import ExpenseCreateUpdateSerializer, ExpenseDetailSerializer
+from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (list) dan POST (create)
+@permission_classes([IsOperatorOrAdmin])
 def list_expense(request):
     if request.method == 'GET':
-        expenses = Expense.objects.all()
-        serializer = ExpenseSerializer(expenses, many=True)
+        # Gunakan select_related untuk optimasi query
+        queryset = Expense.objects.select_related(
+            'project_id__asset',
+            'funding_id__source'
+        ).all().order_by('-date')
+        
+        # ✅ FILTER 1: Asset (via project__asset)
+        asset_id = request.query_params.get('asset')
+        if asset_id and asset_id != 'all':
+            try:
+                queryset = queryset.filter(project_id__asset_id=int(asset_id))
+            except (ValueError, TypeError):
+                pass
+        
+        # ✅ FILTER 2: Search (by description)
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(description__icontains=search)
+            )
+        
+        # ✅ FILTER 3: Kategori
+        category = request.query_params.get('category')
+        if category and category != 'all':
+            queryset = queryset.filter(category=category)
+        
+        # Gunakan DetailSerializer untuk response
+        serializer = ExpenseDetailSerializer(queryset, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        serializer = ExpenseSerializer(data=request.data)
+        # Gunakan CreateUpdateSerializer untuk create
+        serializer = ExpenseCreateUpdateSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            expense = serializer.save()
+            # Return dengan DetailSerializer
+            return_data = ExpenseDetailSerializer(expense).data
+            return Response(return_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsOpratorOrAdmin]) # Oprator boleh GET (detail)
+@permission_classes([IsOperatorOrAdmin])
 def expense_detail(request, pk):
     try:
-        expense = Expense.objects.get(pk=pk)
+        expense = Expense.objects.select_related(
+            'project_id__asset',
+            'funding_id__source'
+        ).get(pk=pk)
     except Expense.DoesNotExist:
         return Response({'error': 'Expense not found'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = ExpenseSerializer(expense)
+        serializer = ExpenseDetailSerializer(expense)
         return Response(serializer.data)
 
-    # Tambahkan pengecekan role manual untuk PUT dan DELETE
     is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
 
     if request.method == 'PUT':
         if not is_admin:
-            return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'error': 'Hanya Admin yang dapat mengubah data.'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
         
-        serializer = ExpenseSerializer(expense, data=request.data)
+        serializer = ExpenseCreateUpdateSerializer(expense, data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
+            expense = serializer.save()
+            # Return dengan DetailSerializer
+            return_data = ExpenseDetailSerializer(expense).data
+            return Response(return_data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
         if not is_admin:
-            return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'error': 'Hanya Admin yang dapat menghapus data.'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
         
         expense.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

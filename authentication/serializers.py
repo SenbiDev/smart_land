@@ -1,3 +1,4 @@
+# File: authentication/serializers.py
 from rest_framework import serializers
 from .models import CustomUser, Profile
 from django.contrib.auth.password_validation import validate_password
@@ -20,28 +21,28 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ('username', 'email', 'password', 'password2', 'role')
-        extra_kwargs = {
-            'role': {'required': False, 'default': 'Viewer'}
-        }
-    
+        # HAPUS 'role' dari fields agar tidak bisa diinput saat registrasi
+        fields = ('username', 'email', 'password', 'password2')
+        # HAPUS extra_kwargs untuk role
+
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError(
                 {"password": "Password fields didn't match."}
             )
         return attrs
-    
+
     def create(self, validated_data):
+        # Role otomatis 'Viewer' dari default model CustomUser
         user = CustomUser.objects.create(
             username=validated_data['username'],
-            email=validated_data['email'],
-            role=validated_data.get('role', 'Viewer')
+            email=validated_data['email']
+            # Tidak perlu set 'role' di sini
         )
         user.set_password(validated_data['password'])
         user.save()
         return user
-    
+
 class ProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 

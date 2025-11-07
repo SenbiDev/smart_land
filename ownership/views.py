@@ -1,5 +1,6 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from authentication.permissions import IsAdminOrSuperadmin
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Sum
@@ -7,7 +8,7 @@ from .models import Ownership
 from .serializers import OwnershipSerializer
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def ownership_list(request):
     if request.method == 'GET':
         ownership = Ownership.objects.all()
@@ -34,7 +35,7 @@ def ownership_list(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def ownership_detail(request, pk):
     try:
         ownership = Ownership.objects.get(pk=pk)

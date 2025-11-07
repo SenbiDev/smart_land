@@ -9,7 +9,7 @@ class CustomUser(AbstractUser):
     ROLE_CHOICES=[
         ('Superadmin', 'Superadmin'),
         ('Admin', 'Admin'),
-        ('Oprator', 'Oprator'),
+        ('Operator', 'Operator'), 
         ('Investor', 'Investor'),
         ('Viewer', 'Viewer'),
     ]

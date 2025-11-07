@@ -2,11 +2,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from authentication.permissions import IsAdminOrSuperadmin
 from .models import DistributionDetail
 from .serializers import DistributionDetailSerializer
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def distribution_detail_list(request):
     if request.method == 'GET':
         data = DistributionDetail.objects.all()
@@ -21,7 +22,7 @@ def distribution_detail_list(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrSuperadmin])
 def distribution_detail_detail(request, pk):
     try:
         data = DistributionDetail.objects.get(pk=pk)
