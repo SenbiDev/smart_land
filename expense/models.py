@@ -14,7 +14,7 @@ class Expense(models.Model):
         default='Operasional' 
     )
 
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=20, decimal_places=2)
     date = models.DateField()
     description = models.TextField(max_length=100)
     proof_url = models.TextField(max_length=100)
