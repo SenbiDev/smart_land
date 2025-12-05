@@ -10,13 +10,11 @@ from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin
 @permission_classes([IsOperatorOrAdmin])
 def list_expense(request):
     if request.method == 'GET':
-        # Gunakan select_related untuk optimasi query
         queryset = Expense.objects.select_related(
             'project_id__asset',
             'funding_id__source'
         ).all().order_by('-date')
         
-        # ✅ FILTER 1: Asset (via project__asset)
         asset_id = request.query_params.get('asset')
         if asset_id and asset_id != 'all':
             try:
@@ -24,28 +22,23 @@ def list_expense(request):
             except (ValueError, TypeError):
                 pass
         
-        # ✅ FILTER 2: Search (by description)
         search = request.query_params.get('search')
         if search:
             queryset = queryset.filter(
                 Q(description__icontains=search)
             )
         
-        # ✅ FILTER 3: Kategori
         category = request.query_params.get('category')
         if category and category != 'all':
             queryset = queryset.filter(category=category)
         
-        # Gunakan DetailSerializer untuk response
         serializer = ExpenseDetailSerializer(queryset, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        # Gunakan CreateUpdateSerializer untuk create
         serializer = ExpenseCreateUpdateSerializer(data=request.data)
         if serializer.is_valid():
             expense = serializer.save()
-            # Return dengan DetailSerializer
             return_data = ExpenseDetailSerializer(expense).data
             return Response(return_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -65,7 +58,9 @@ def expense_detail(request, pk):
         serializer = ExpenseDetailSerializer(expense)
         return Response(serializer.data)
 
-    is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
+    is_admin = request.user.is_superuser or (
+        request.user.role and request.user.role.name in ['Admin', 'Superadmin']
+    )
 
     if request.method == 'PUT':
         if not is_admin:
@@ -77,7 +72,6 @@ def expense_detail(request, pk):
         serializer = ExpenseCreateUpdateSerializer(expense, data=request.data)
         if serializer.is_valid():
             expense = serializer.save()
-            # Return dengan DetailSerializer
             return_data = ExpenseDetailSerializer(expense).data
             return Response(return_data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -49,7 +49,11 @@ def funding_list(request):
         return Response(serializer.data)
 
     if request.method == 'POST':
-        if not (request.user.role == 'Admin' or request.user.role == 'Superadmin'):
+        is_allowed = request.user.is_superuser or (
+            request.user.role and request.user.role.name in ['Admin', 'Superadmin']
+        )
+
+        if not is_allowed:
              return Response({'error': 'Hanya Admin yang dapat menambah data.'}, status=status.HTTP_403_FORBIDDEN)
         
         serializer = FundingCreateUpdateSerializer(data=request.data)

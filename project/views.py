@@ -1,13 +1,13 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status, permissions # Import permissions
-from django.db.models import Q # Untuk query filter OR
+from rest_framework import status, permissions 
+from django.db.models import Q 
 from .models import Project
 from .serializers import ProjectSerializer
 from authentication.permissions import IsAdminOrSuperadmin
 from expense.models import Expense
 from ownership.models import Ownership
-from investor.models import Investor # Import Investor
+from investor.models import Investor 
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -33,8 +33,15 @@ def list_project(request):
     return Response(serializer.data)
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrSuperadmin]) 
+@permission_classes([permissions.IsAuthenticated]) 
 def tambah_project(request):
+    is_allowed = request.user.is_superuser or (
+        request.user.role and request.user.role.name in ['Admin', 'Superadmin']
+    )
+    
+    if not is_allowed:
+         return Response({'error': 'Hanya Admin yang dapat menambah data.'}, status=status.HTTP_403_FORBIDDEN)
+
     serializer = ProjectSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
@@ -42,7 +49,7 @@ def tambah_project(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin]) 
+@permission_classes([permissions.IsAuthenticated]) 
 def project_detail(request, pk):
     try:
         project = Project.objects.get(pk=pk)
@@ -53,7 +60,14 @@ def project_detail(request, pk):
         serializer = ProjectSerializer(project)
         return Response(serializer.data)
 
-    elif request.method == 'PUT':
+    is_admin = request.user.is_superuser or (
+        request.user.role and request.user.role.name in ['Admin', 'Superadmin']
+    )
+
+    if request.method == 'PUT':
+        if not is_admin:
+             return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = ProjectSerializer(project, data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -61,5 +75,8 @@ def project_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+        if not is_admin:
+             return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
+
         project.delete()
         return Response({'message': 'Project deleted'}, status=status.HTTP_204_NO_CONTENT)
