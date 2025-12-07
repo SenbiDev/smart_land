@@ -2,16 +2,15 @@ from decimal import Decimal
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status, permissions
+from rest_framework import status
 from django.shortcuts import get_object_or_404
 from .models import Production
 from .serializers import ProductionCreateUpdateSerializer, ProductionDetailSerializer
 from asset.models import Asset
 from ownership.models import Ownership
-from investor.models import Investor
 from profit_distribution.models import ProfitDistribution
 from distribution_detail.models import DistributionDetail
-from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin
+from authentication.permissions import IsOperatorOrAdmin
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsOperatorOrAdmin])
@@ -48,6 +47,7 @@ def production_list(request):
 
             production = serializer.save(total_value=total_value)
             
+            # --- Logika Otomatis Bagi Hasil (Profit Distribution) ---
             asset = production.asset
             net_profit = total_value
 
@@ -81,6 +81,7 @@ def production_list(request):
                     ownership_percentage=round(percent * 100, 2),
                     amount_received=share
                 )
+            # -----------------------------------------------------
             
             return_data = ProductionDetailSerializer(production).data
             return Response(return_data, status=status.HTTP_201_CREATED)
@@ -96,15 +97,11 @@ def production_detail(request, pk):
     if request.method == 'GET':
         serializer = ProductionDetailSerializer(production)
         return Response(serializer.data)
-    
-    is_admin = request.user.is_superuser or (
-        request.user.role and request.user.role.name in ['Admin', 'Superadmin']
-    )
 
+    # [PERBAIKAN UTAMA: Hapus blok pengecekan if not is_admin]
+    # Operator diperbolehkan melakukan Edit/Delete karena permission IsOperatorOrAdmin sudah aktif
+    
     if request.method in ['PUT', 'PATCH']:
-        if not is_admin:
-            return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
-        
         data = request.data.copy()
         
         quantity = float(data.get('quantity', production.quantity))
@@ -115,13 +112,12 @@ def production_detail(request, pk):
         if serializer.is_valid():
             production = serializer.save(total_value=total_value)
             
+            # Update ulang bagi hasil jika data berubah
             asset = production.asset
             net_profit = total_value
-
             owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
             owner_share = net_profit * owner_share_percent_decimal
             investor_share_total = net_profit - owner_share
-
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1
 
@@ -155,8 +151,6 @@ def production_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-        if not is_admin:
-            return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
-        
+        # Operator juga diperbolehkan menghapus data inputannya
         production.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
