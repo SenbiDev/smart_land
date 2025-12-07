@@ -1,18 +1,15 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated 
-from authentication.permissions import IsAdminOrSuperadmin
+from authentication.permissions import IsAdminOrSuperadmin, IsViewerOrInvestorReadOnly
 from django.db.models import Sum, F, DecimalField, Case, When, Value, FloatField
 from django.db.models.functions import Coalesce
 from decimal import Decimal 
 from .models import Funding
-from expense.models import Expense 
-from project.models import Project
 from .serializers import FundingCreateUpdateSerializer, FundingDetailSerializer
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly]) 
 def funding_list(request):
     
     if request.method == 'GET':
@@ -49,6 +46,7 @@ def funding_list(request):
         return Response(serializer.data)
 
     if request.method == 'POST':
+        # Manual check because IsViewerOrInvestorReadOnly logic handles SAFE METHODS, but we need to ensure strictly Admin for POST
         is_allowed = request.user.is_superuser or (
             request.user.role and request.user.role.name in ['Admin', 'Superadmin']
         )
@@ -64,7 +62,7 @@ def funding_list(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly])
 def funding_detail(request, pk):
     try:
         queryset = Funding.objects.select_related('source', 'project')
@@ -93,6 +91,10 @@ def funding_detail(request, pk):
         return Response(serializer.data)
 
     elif request.method == 'PUT':
+        # Explicit check again for safety
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = FundingCreateUpdateSerializer(funding_instance, data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -100,5 +102,9 @@ def funding_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+         # Explicit check again for safety
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
         funding_instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

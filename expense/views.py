@@ -1,13 +1,14 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status, permissions
+from rest_framework import status
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from .models import Expense
 from .serializers import ExpenseCreateUpdateSerializer, ExpenseDetailSerializer
-from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin
+from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
 def list_expense(request):
     if request.method == 'GET':
         queryset = Expense.objects.select_related(
@@ -36,6 +37,7 @@ def list_expense(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
+        # Viewer/Investor will be rejected here automatically as IsViewerOrInvestorReadOnly checks for SAFE_METHODS
         serializer = ExpenseCreateUpdateSerializer(data=request.data)
         if serializer.is_valid():
             expense = serializer.save()
@@ -44,7 +46,7 @@ def list_expense(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
 def expense_detail(request, pk):
     try:
         expense = Expense.objects.select_related(

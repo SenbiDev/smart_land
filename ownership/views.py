@@ -1,6 +1,6 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from authentication.permissions import IsAdminOrSuperadmin
+from authentication.permissions import IsAdminOrSuperadmin, IsViewerOrInvestorReadOnly
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Sum, Count
@@ -13,14 +13,13 @@ from .serializers import (
 )
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly])
 def ownership_list(request):
     if request.method == 'GET':
         ownerships = Ownership.objects.select_related(
             'investor__user', 'asset', 'funding'
-        ).all()  # ← UBAH INI (optimize query)
+        ).all()
         
-        # Tambah filter by asset (opsional, biar bisa filter)
         asset_id = request.query_params.get('asset_id')
         if asset_id:
             ownerships = ownerships.filter(asset_id=asset_id)
@@ -29,6 +28,10 @@ def ownership_list(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
+        # Strict check for POST
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = OwnershipSerializer(data=request.data)
         if serializer.is_valid():
             ownership = serializer.save()
@@ -48,7 +51,7 @@ def ownership_list(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly])
 def ownership_detail(request, pk):
     try:
         ownership = Ownership.objects.get(pk=pk)
@@ -60,6 +63,9 @@ def ownership_detail(request, pk):
         return Response(serializer.data)
 
     elif request.method == 'PUT':
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = OwnershipSerializer(ownership, data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -74,6 +80,9 @@ def ownership_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
         asset_id = ownership.asset.id
         ownership.delete()
 
@@ -139,7 +148,6 @@ def ownership_composition(request):
         
         composition = []
         for ownership in ownerships:
-            # Deduce investor type dari username
             username = ownership.investor.user.username.lower()
             if 'pt' in username or 'cv' in username:
                 investor_type = 'corporate'

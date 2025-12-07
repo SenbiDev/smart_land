@@ -10,10 +10,12 @@ from asset.models import Asset
 from ownership.models import Ownership
 from profit_distribution.models import ProfitDistribution
 from distribution_detail.models import DistributionDetail
-from authentication.permissions import IsOperatorOrAdmin
+# Import permission baru
+from authentication.permissions import IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin])
+# Izinkan Operator/Admin (Full) ATAU Viewer/Investor (Cuma Lihat)
+@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
 def production_list(request):
     
     if request.method == 'GET':
@@ -39,6 +41,7 @@ def production_list(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
+        # Viewer/Investor otomatis tertolak disini karena bukan SAFE_METHOD
         serializer = ProductionCreateUpdateSerializer(data=request.data)
         if serializer.is_valid():
             quantity = serializer.validated_data['quantity']
@@ -47,14 +50,12 @@ def production_list(request):
 
             production = serializer.save(total_value=total_value)
             
-            # --- Logika Otomatis Bagi Hasil (Profit Distribution) ---
+            # --- Logika Otomatis Bagi Hasil ---
             asset = production.asset
             net_profit = total_value
-
             owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
             owner_share = net_profit * owner_share_percent_decimal
             investor_share_total = net_profit - owner_share
-
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1  
 
@@ -81,7 +82,6 @@ def production_list(request):
                     ownership_percentage=round(percent * 100, 2),
                     amount_received=share
                 )
-            # -----------------------------------------------------
             
             return_data = ProductionDetailSerializer(production).data
             return Response(return_data, status=status.HTTP_201_CREATED)
@@ -90,7 +90,7 @@ def production_list(request):
 
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
 def production_detail(request, pk):
     production = get_object_or_404(Production, pk=pk)
 
@@ -98,9 +98,6 @@ def production_detail(request, pk):
         serializer = ProductionDetailSerializer(production)
         return Response(serializer.data)
 
-    # [PERBAIKAN UTAMA: Hapus blok pengecekan if not is_admin]
-    # Operator diperbolehkan melakukan Edit/Delete karena permission IsOperatorOrAdmin sudah aktif
-    
     if request.method in ['PUT', 'PATCH']:
         data = request.data.copy()
         
@@ -112,7 +109,7 @@ def production_detail(request, pk):
         if serializer.is_valid():
             production = serializer.save(total_value=total_value)
             
-            # Update ulang bagi hasil jika data berubah
+            # Recalculate Profit Distribution
             asset = production.asset
             net_profit = total_value
             owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
@@ -151,6 +148,5 @@ def production_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-        # Operator juga diperbolehkan menghapus data inputannya
         production.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

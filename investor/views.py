@@ -1,13 +1,12 @@
-# File: investor/views.py
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from authentication.permissions import IsAdminOrSuperadmin
+from authentication.permissions import IsAdminOrSuperadmin, IsViewerOrInvestorReadOnly
 from .models import Investor
 from .serializers import InvestorSerializer
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly])
 def investor_list_create(request):
     if request.method == 'GET':
         investors = Investor.objects.select_related('user').all()
@@ -15,18 +14,19 @@ def investor_list_create(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
+        # Strict check
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = InvestorSerializer(data=request.data)
         if serializer.is_valid():
-            # --- UBAH LOGIKA SAVE ---
-            # Biarkan serializer menangani field 'user' dari request.data
             serializer.save()
-            # -----------------------
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly])
 def investor_detail(request, pk):
     try:
         investor = Investor.objects.select_related('user').get(pk=pk)
@@ -38,15 +38,18 @@ def investor_detail(request, pk):
         return Response(serializer.data)
 
     elif request.method == 'PUT':
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = InvestorSerializer(investor, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
-            # Cek apakah 'user' ada di data request dan mencegahnya jika perlu
-            # if 'user' in request.data:
-            #     return Response({'error': 'Cannot change the user associated with an investor profile.'}, status=status.HTTP_400_BAD_REQUEST)
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
+        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        
         investor.delete()
         return Response({'message': 'Investor deleted'}, status=status.HTTP_204_NO_CONTENT)
