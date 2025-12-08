@@ -1,40 +1,24 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions 
-from django.db.models import Q 
+from django.shortcuts import get_object_or_404
 from .models import Project
 from .serializers import ProjectSerializer
-from authentication.permissions import IsAdminOrSuperadmin
-from expense.models import Expense
-from ownership.models import Ownership
-from investor.models import Investor 
+from rest_framework.permissions import IsAuthenticated
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticated]) 
 def list_project(request):
-    user = request.user
-    projects = Project.objects.all().order_by('-start_date') 
-
-    if user.role == 'Investor':
-        try:
-            investor = user.investor
-            owned_asset_ids = Ownership.objects.filter(investor=investor).values_list('asset_id', flat=True).distinct()
-            relevant_project_ids = Expense.objects.filter(
-                asset_id__in=owned_asset_ids,
-                project_id__isnull=False
-            ).values_list('project_id', flat=True).distinct()
-
-            projects = projects.filter(id__in=relevant_project_ids)
-
-        except Investor.DoesNotExist:
-            projects = Project.objects.none()
-
+    # [TRANSPARANSI] Semua user login (Investor, Viewer, dll) BISA melihat semua proyek
+    projects = Project.objects.all().order_by('-start_date')
     serializer = ProjectSerializer(projects, many=True)
     return Response(serializer.data)
 
 @api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated]) 
+@permission_classes([IsAuthenticated]) 
 def tambah_project(request):
+    # [PERBAIKAN] Fungsi ini dikembalikan agar match dengan urls.py Anda
+    # Hanya Admin/Superadmin yang boleh create
     is_allowed = request.user.is_superuser or (
         request.user.role and request.user.role.name in ['Admin', 'Superadmin']
     )
@@ -49,7 +33,7 @@ def tambah_project(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([permissions.IsAuthenticated]) 
+@permission_classes([IsAuthenticated]) 
 def project_detail(request, pk):
     try:
         project = Project.objects.get(pk=pk)
@@ -60,13 +44,14 @@ def project_detail(request, pk):
         serializer = ProjectSerializer(project)
         return Response(serializer.data)
 
+    # Cek Role Manual untuk Update/Delete
     is_admin = request.user.is_superuser or (
         request.user.role and request.user.role.name in ['Admin', 'Superadmin']
     )
 
     if request.method == 'PUT':
         if not is_admin:
-             return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = ProjectSerializer(project, data=request.data)
         if serializer.is_valid():
@@ -76,7 +61,7 @@ def project_detail(request, pk):
 
     elif request.method == 'DELETE':
         if not is_admin:
-             return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
+             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
         project.delete()
         return Response({'message': 'Project deleted'}, status=status.HTTP_204_NO_CONTENT)

@@ -16,6 +16,13 @@ def list_expense(request):
             'funding_id__source'
         ).all().order_by('-date')
         
+        # --- REFACTOR START: Data Scoping untuk Investor ---
+        if request.user.role and request.user.role.name == 'Investor':
+            # Investor hanya melihat expense dari project yang terkait dengan aset miliknya
+            # Asumsi field relasi di Expense adalah 'project_id' (sesuai kode asli)
+            queryset = queryset.filter(project_id__asset__ownerships__investor__user=request.user).distinct()
+        # --- REFACTOR END ---
+
         asset_id = request.query_params.get('asset')
         if asset_id and asset_id != 'all':
             try:
@@ -37,7 +44,7 @@ def list_expense(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        # Viewer/Investor will be rejected here automatically as IsViewerOrInvestorReadOnly checks for SAFE_METHODS
+        # IsViewerOrInvestorReadOnly mencegah Investor melakukan POST
         serializer = ExpenseCreateUpdateSerializer(data=request.data)
         if serializer.is_valid():
             expense = serializer.save()
@@ -55,6 +62,17 @@ def expense_detail(request, pk):
         ).get(pk=pk)
     except Expense.DoesNotExist:
         return Response({'error': 'Expense not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Cek akses read untuk Investor pada detail expense
+    if request.user.role and request.user.role.name == 'Investor':
+        # Cek apakah expense ini terkait aset investor
+        # Perlu handling jika project_id null, tapi biasanya expense terikat project/asset
+        has_access = False
+        if expense.project_id and expense.project_id.asset:
+             has_access = expense.project_id.asset.ownerships.filter(investor__user=request.user).exists()
+        
+        if not has_access:
+             return Response({'error': 'Anda tidak memiliki akses ke data pengeluaran ini.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
         serializer = ExpenseDetailSerializer(expense)

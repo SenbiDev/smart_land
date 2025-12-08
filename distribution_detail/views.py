@@ -11,6 +11,12 @@ from .serializers import DistributionDetailSerializer
 def distribution_detail_list(request):
     if request.method == 'GET':
         data = DistributionDetail.objects.all()
+        
+        # --- REFACTOR START: Privacy Filter ---
+        if request.user.role and request.user.role.name == 'Investor':
+            data = data.filter(investor__user=request.user)
+        # --- REFACTOR END ---
+
         serializer = DistributionDetailSerializer(data, many=True)
         return Response(serializer.data)
     
@@ -32,6 +38,11 @@ def distribution_detail_detail(request, pk):
     except DistributionDetail.DoesNotExist:
         return Response({'error': 'Not Found'}, status=status.HTTP_404_NOT_FOUND)
     
+    # Cek privacy
+    if request.user.role and request.user.role.name == 'Investor':
+        if data.investor.user != request.user:
+            return Response({'error': 'Anda tidak memiliki hak akses data ini.'}, status=status.HTTP_403_FORBIDDEN)
+
     if request.method == 'GET':
         serializer = DistributionDetailSerializer(data)
         return Response(serializer.data)

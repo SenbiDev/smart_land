@@ -10,17 +10,21 @@ from asset.models import Asset
 from ownership.models import Ownership
 from profit_distribution.models import ProfitDistribution
 from distribution_detail.models import DistributionDetail
-# Import permission baru
 from authentication.permissions import IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
 
 @api_view(['GET', 'POST'])
-# Izinkan Operator/Admin (Full) ATAU Viewer/Investor (Cuma Lihat)
 @permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
 def production_list(request):
     
     if request.method == 'GET':
         queryset = Production.objects.select_related('asset').all().order_by('-date')
         
+        # --- REFACTOR START: Data Scoping untuk Investor ---
+        if request.user.role and request.user.role.name == 'Investor':
+            # Investor hanya melihat produksi dari aset yang dia miliki unitnya (Ownership)
+            queryset = queryset.filter(asset__ownerships__investor__user=request.user).distinct()
+        # --- REFACTOR END ---
+
         asset_id = request.query_params.get('asset')
         if asset_id and asset_id != 'all':
             queryset = queryset.filter(asset_id=asset_id)
@@ -41,7 +45,8 @@ def production_list(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        # Viewer/Investor otomatis tertolak disini karena bukan SAFE_METHOD
+        # Permission IsViewerOrInvestorReadOnly akan menolak akses ini untuk Investor/Viewer
+        # karena POST bukan SAFE_METHOD
         serializer = ProductionCreateUpdateSerializer(data=request.data)
         if serializer.is_valid():
             quantity = serializer.validated_data['quantity']
@@ -53,9 +58,11 @@ def production_list(request):
             # --- Logika Otomatis Bagi Hasil ---
             asset = production.asset
             net_profit = total_value
-            owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
+            # Hindari pembagian dengan nol atau error desimal
+            owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
             owner_share = net_profit * owner_share_percent_decimal
             investor_share_total = net_profit - owner_share
+            
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1  
 
@@ -92,7 +99,19 @@ def production_list(request):
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
 def production_detail(request, pk):
+    # Gunakan queryset filter untuk keamanan level objek jika perlu, 
+    # tapi get_object_or_404 standar cukup aman jika ID tidak bisa ditebak.
+    # Untuk keamanan ekstra, kita bisa cek permission di sini juga.
     production = get_object_or_404(Production, pk=pk)
+
+    # Cek akses Investor terhadap detail produksi spesifik
+    if request.user.role and request.user.role.name == 'Investor':
+        has_access = Ownership.objects.filter(
+            asset=production.asset, 
+            investor__user=request.user
+        ).exists()
+        if not has_access:
+            return Response({'error': 'Anda tidak memiliki akses ke data produksi ini.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
         serializer = ProductionDetailSerializer(production)
@@ -112,9 +131,10 @@ def production_detail(request, pk):
             # Recalculate Profit Distribution
             asset = production.asset
             net_profit = total_value
-            owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
+            owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
             owner_share = net_profit * owner_share_percent_decimal
             investor_share_total = net_profit - owner_share
+            
             ownerships = Ownership.objects.filter(asset=asset)
             total_units = sum(o.units for o in ownerships) or 1
 

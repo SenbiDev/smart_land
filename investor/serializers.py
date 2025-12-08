@@ -11,6 +11,3 @@ class InvestorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Investor
         fields = ['id', 'user', 'username', 'email', 'contact', 'join_date', 'total_investment']
-        extra_kwargs = {
-            'user': {'required': True}
-        }

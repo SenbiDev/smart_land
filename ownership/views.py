@@ -20,6 +20,12 @@ def ownership_list(request):
             'investor__user', 'asset', 'funding'
         ).all()
         
+        # --- REFACTOR START: Strict Privacy ---
+        if request.user.role and request.user.role.name == 'Investor':
+            # Investor HANYA boleh melihat kepemilikannya sendiri.
+            ownerships = ownerships.filter(investor__user=request.user)
+        # --- REFACTOR END ---
+        
         asset_id = request.query_params.get('asset_id')
         if asset_id:
             ownerships = ownerships.filter(asset_id=asset_id)
@@ -57,6 +63,11 @@ def ownership_detail(request, pk):
         ownership = Ownership.objects.get(pk=pk)
     except Ownership.DoesNotExist:
         return Response({'error': 'Ownership not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Cek akses detail untuk Investor
+    if request.user.role and request.user.role.name == 'Investor':
+        if ownership.investor.user != request.user:
+             return Response({'error': 'Anda tidak memiliki akses ke data kepemilikan ini.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
         serializer = OwnershipSerializer(ownership)
@@ -96,6 +107,7 @@ def ownership_detail(request, pk):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def ownership_summary(request):
+    # Summary bersifat agregat, boleh dilihat (transparansi umum)
     asset_id = request.query_params.get('asset_id')
     if not asset_id:
         return Response({'error': 'asset_id required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -133,6 +145,11 @@ def ownership_summary(request):
 @permission_classes([IsAuthenticated])
 def ownership_composition(request):
     """Komposisi untuk pie chart & list investor"""
+    # Untuk transparansi, list investor ditampilkan namun sebaiknya dibatasi jika menyangkut nominal personal.
+    # Namun berdasarkan kode awal, ini menampilkan composition.
+    # Jika ingin privasi ketat, Investor lain harusnya disamarkan namanya (misal: "Investor 1").
+    # Tapi untuk saat ini kita biarkan sesuai kode asli, hanya modul Ownership List di atas yang di-strict.
+    
     asset_id = request.query_params.get('asset_id')
     
     if not asset_id:
