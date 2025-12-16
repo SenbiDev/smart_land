@@ -1,7 +1,6 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-# Menambahkan IsOperatorOrAdmin agar operator bisa GET data untuk dropdown expense
 from authentication.permissions import IsAdminOrSuperadmin, IsViewerOrInvestorReadOnly, IsOperatorOrAdmin
 from django.db.models import Sum, F, DecimalField, Case, When, Value, FloatField
 from django.db.models.functions import Coalesce
@@ -10,22 +9,20 @@ from .models import Funding
 from .serializers import FundingCreateUpdateSerializer, FundingDetailSerializer
 
 @api_view(['GET', 'POST'])
-# Update Permission: Tambahkan IsOperatorOrAdmin
 @permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly | IsOperatorOrAdmin]) 
 def funding_list(request):
     
     if request.method == 'GET':
         queryset = Funding.objects.select_related('source', 'project').all()
         
-        # Data Scoping: Investor hanya melihat funding di aset miliknya
         if request.user.role and request.user.role.name == 'Investor':
             queryset = queryset.filter(project__asset__ownerships__investor__user=request.user).distinct()
         
-        # Note: Operator akan melihat .all() (semua dana) agar bisa memilih sumber dana manapun 
-        # saat input pengeluaran.
-
         asset_id = request.query_params.get('asset_id')
-        if asset_id and asset_id != 'all':
+        
+        if asset_id == 'unallocated':
+            queryset = queryset.filter(project__isnull=True)
+        elif asset_id and asset_id != 'all':
             try:
                 queryset = queryset.filter(project__asset_id=int(asset_id))
             except (ValueError, TypeError):
@@ -56,8 +53,6 @@ def funding_list(request):
         return Response(serializer.data)
 
     if request.method == 'POST':
-        # Manual Check: Meskipun Operator lolos permission class di atas,
-        # kode ini akan MENOLAK Operator untuk melakukan POST (Tambah Dana).
         is_allowed = request.user.is_superuser or (
             request.user.role and request.user.role.name in ['Admin', 'Superadmin']
         )
@@ -73,7 +68,6 @@ def funding_list(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
-# Update Permission: Tambahkan IsOperatorOrAdmin
 @permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly | IsOperatorOrAdmin])
 def funding_detail(request, pk):
     try:
@@ -98,7 +92,6 @@ def funding_detail(request, pk):
     except Funding.DoesNotExist:
         return Response({'error': 'funding not found'}, status=status.HTTP_404_NOT_FOUND)
     
-    # Cek akses read detail funding untuk investor
     if request.user.role and request.user.role.name == 'Investor':
         has_access = False
         if funding_instance.project and funding_instance.project.asset:
@@ -112,7 +105,6 @@ def funding_detail(request, pk):
         return Response(serializer.data)
 
     elif request.method == 'PUT':
-        # Manual Check: Pastikan hanya Admin/Superadmin yang bisa Edit
         if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
              return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -123,7 +115,6 @@ def funding_detail(request, pk):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-         # Manual Check: Pastikan hanya Admin/Superadmin yang bisa Hapus
         if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
              return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
