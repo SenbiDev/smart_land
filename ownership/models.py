@@ -5,7 +5,7 @@ from funding.models import Funding
 
 class Ownership(models.Model):
     investor = models.ForeignKey(Investor, on_delete=models.CASCADE, related_name='ownerships')
-    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='ownerships', null=True, blank=True)
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='ownerships', null=True, blank=True)
     funding = models.ForeignKey(Funding, on_delete=models.CASCADE, related_name='ownerships')
     units = models.IntegerField()
     ownership_percentage = models.FloatField(default=0.0, blank=True, null=True)

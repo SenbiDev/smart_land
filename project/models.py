@@ -1,16 +1,15 @@
 from django.db import models
-from asset.models import Asset 
-
-# Create your models here.
+from asset.models import Asset
 
 class Project(models.Model):
-    name = models.CharField(max_length=100)
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='projects')
+    name = models.CharField(max_length=255)
     description = models.TextField()
     start_date = models.DateField()
     end_date = models.DateField()
-    budget = models.DecimalField(max_digits=20, decimal_places=2)
+    budget = models.DecimalField(max_digits=15, decimal_places=2)
+    status = models.CharField(max_length=20, default='Planned')
     created_at = models.DateTimeField(auto_now_add=True)
-    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='projects')
 
     def __str__(self):
-       return self.name
+        return self.name

@@ -6,22 +6,20 @@ from .serializers import ProfitDistributionSerializer
 from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
 
 @api_view(['GET', 'POST'])
-@permission_classes([permissions.IsAuthenticated]) # atau sesuaikan permission custom jika perlu
+@permission_classes([permissions.IsAuthenticated])
 def profit_distribution_list(request):
     if request.method == 'GET':
         distributions = ProfitDistribution.objects.select_related('production__asset').all()
         
-        # --- REFACTOR START: Data Scoping ---
+        # Data Scoping: Investor hanya melihat miliknya
         if request.user.role and request.user.role.name == 'Investor':
-            # Hanya tampilkan distribusi profit dari aset dimana investor menanam modal
             distributions = distributions.filter(production__asset__ownerships__investor__user=request.user).distinct()
-        # --- REFACTOR END ---
 
         serializer = ProfitDistributionSerializer(distributions, many=True)
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        # Pastikan hanya admin/sistem yang bisa buat ini (biasanya otomatis by system di module production)
+        # Cek Admin
         is_admin = request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])
         if not is_admin:
              return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
@@ -32,7 +30,8 @@ def profit_distribution_list(request):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['GET', 'PUT', 'DELETE'])
+# [PERBAIKAN] Menambahkan 'PATCH' di sini
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([permissions.IsAuthenticated])
 def profit_distribution_detail(request, pk):
     try:
@@ -40,7 +39,7 @@ def profit_distribution_detail(request, pk):
     except ProfitDistribution.DoesNotExist:
         return Response({'message': 'Not Found'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Cek akses Investor
+    # Cek akses baca untuk Investor
     if request.user.role and request.user.role.name == 'Investor':
         has_access = False
         if distribution.production and distribution.production.asset:
@@ -53,13 +52,17 @@ def profit_distribution_detail(request, pk):
         serializer = ProfitDistributionSerializer(distribution)
         return Response(serializer.data)
 
-    elif request.method == 'PUT':
-        # Cek admin
+    # [PERBAIKAN] Menangani PUT dan PATCH sekaligus
+    elif request.method in ['PUT', 'PATCH']:
+        # Cek admin untuk akses tulis
         is_admin = request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])
         if not is_admin:
              return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = ProfitDistributionSerializer(distribution, data=request.data)
+        # Aktifkan partial=True jika metodenya PATCH
+        is_partial = (request.method == 'PATCH')
+        serializer = ProfitDistributionSerializer(distribution, data=request.data, partial=is_partial)
+        
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
