@@ -25,7 +25,7 @@ class FundingSerializer(serializers.ModelSerializer):
         }
 
     def get_project_name(self, obj):
-        return obj.project.name if obj.project else "Dana Belum Dialokasikan"
+        return obj.project.name if obj.project else "Dana Umum/Dana Belum Dialokasikan"
 
     def get_total_terpakai(self, obj):
         # Menghitung total expense yang memiliki funding_id ini
@@ -63,7 +63,7 @@ class FundingDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_project_name(self, obj):
-        return obj.project.name if obj.project else "Dana Belum Dialokasikan"
+        return obj.project.name if obj.project else "Dana Umum/Dana Belum Dialokasikan"
 
     # --- LOGIKA PERHITUNGAN (Sama dengan FundingSerializer) ---
     def get_total_terpakai(self, obj):

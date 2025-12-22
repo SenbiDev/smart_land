@@ -21,5 +21,5 @@ class Funding(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        project_name = self.project.name if self.project else "Dana Belum Dialokasikan"
+        project_name = self.project.name if self.project else "Dana Umum/Dana Belum Dialokasikan"
         return f"{self.source.name} - {project_name} - {self.amount}"
