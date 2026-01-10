@@ -56,39 +56,41 @@ def production_list(request):
             production = serializer.save(total_value=total_value)
             
             # --- Logika Otomatis Bagi Hasil ---
-            asset = production.asset
-            net_profit = total_value
-            # Hindari pembagian dengan nol atau error desimal
-            owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
-            owner_share = net_profit * owner_share_percent_decimal
-            investor_share_total = net_profit - owner_share
-            
-            ownerships = Ownership.objects.filter(asset=asset)
-            total_units = sum(o.units for o in ownerships) or 1  
+            # [FIX] Hanya hitung jika status TERJUAL
+            if production.status == 'terjual':
+                asset = production.asset
+                net_profit = total_value
+                # Hindari pembagian dengan nol atau error desimal
+                owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
+                owner_share = net_profit * owner_share_percent_decimal
+                investor_share_total = net_profit - owner_share
+                
+                ownerships = Ownership.objects.filter(asset=asset)
+                total_units = sum(o.units for o in ownerships) or 1  
 
-            distribution, created = ProfitDistribution.objects.update_or_create(
-                production=production,
-                defaults={
-                    'period': str(production.date),
-                    'net_profit': net_profit,
-                    'landowner_share': owner_share,
-                    'investor_share': investor_share_total,
-                    'distribution_date': timezone.now().date()
-                }
-            )
-
-            if not created:
-                distribution.details.all().delete()
-
-            for o in ownerships:
-                percent = o.units / total_units
-                share = investor_share_total * Decimal(str(percent))
-                DistributionDetail.objects.create(
-                    distribution=distribution,
-                    investor=o.investor,
-                    ownership_percentage=round(percent * 100, 2),
-                    amount_received=share
+                distribution, created = ProfitDistribution.objects.update_or_create(
+                    production=production,
+                    defaults={
+                        'period': str(production.date),
+                        'net_profit': net_profit,
+                        'landowner_share': owner_share,
+                        'investor_share': investor_share_total,
+                        'distribution_date': timezone.now().date()
+                    }
                 )
+
+                if not created:
+                    distribution.details.all().delete()
+
+                for o in ownerships:
+                    percent = o.units / total_units
+                    share = investor_share_total * Decimal(str(percent))
+                    DistributionDetail.objects.create(
+                        distribution=distribution,
+                        investor=o.investor,
+                        ownership_percentage=round(percent * 100, 2),
+                        amount_received=share
+                    )
             
             return_data = ProductionDetailSerializer(production).data
             return Response(return_data, status=status.HTTP_201_CREATED)
@@ -129,38 +131,40 @@ def production_detail(request, pk):
             production = serializer.save(total_value=total_value)
             
             # Recalculate Profit Distribution
-            asset = production.asset
-            net_profit = total_value
-            owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
-            owner_share = net_profit * owner_share_percent_decimal
-            investor_share_total = net_profit - owner_share
-            
-            ownerships = Ownership.objects.filter(asset=asset)
-            total_units = sum(o.units for o in ownerships) or 1
+            # [FIX] Hanya hitung jika status TERJUAL
+            if production.status == 'terjual':
+                asset = production.asset
+                net_profit = total_value
+                owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
+                owner_share = net_profit * owner_share_percent_decimal
+                investor_share_total = net_profit - owner_share
+                
+                ownerships = Ownership.objects.filter(asset=asset)
+                total_units = sum(o.units for o in ownerships) or 1
 
-            distribution, created = ProfitDistribution.objects.update_or_create(
-                production=production,
-                defaults={
-                    'period': str(production.date),
-                    'net_profit': net_profit,
-                    'landowner_share': owner_share,
-                    'investor_share': investor_share_total,
-                    'distribution_date': timezone.now().date()
-                }
-            )
-
-            if not created:
-                distribution.details.all().delete()
-
-            for o in ownerships:
-                percent = o.units / total_units
-                share = investor_share_total * Decimal(str(percent))
-                DistributionDetail.objects.create(
-                    distribution=distribution,
-                    investor=o.investor,
-                    ownership_percentage=round(percent * 100, 2),
-                    amount_received=share
+                distribution, created = ProfitDistribution.objects.update_or_create(
+                    production=production,
+                    defaults={
+                        'period': str(production.date),
+                        'net_profit': net_profit,
+                        'landowner_share': owner_share,
+                        'investor_share': investor_share_total,
+                        'distribution_date': timezone.now().date()
+                    }
                 )
+
+                if not created:
+                    distribution.details.all().delete()
+
+                for o in ownerships:
+                    percent = o.units / total_units
+                    share = investor_share_total * Decimal(str(percent))
+                    DistributionDetail.objects.create(
+                        distribution=distribution,
+                        investor=o.investor,
+                        ownership_percentage=round(percent * 100, 2),
+                        amount_received=share
+                    )
 
             return_data = ProductionDetailSerializer(production).data
             return Response(return_data)
