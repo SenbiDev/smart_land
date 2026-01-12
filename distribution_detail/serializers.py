@@ -7,4 +7,4 @@ class DistributionDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DistributionDetail
-        fields = ['id', 'investor', 'investor_name', 'ownership_percentage', 'amount_received']
+        fields = ['id', 'distribution', 'investor', 'investor_name', 'ownership_percentage', 'amount_received']

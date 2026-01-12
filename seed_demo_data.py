@@ -272,7 +272,7 @@ def create_assets(owners):
             'value': Decimal('125000000'),
             'acquisition_date': date(2024, 1, 25),
             'ownership_status': 'full_ownership',
-            'landowner': None, # MILIK PERUSAHAAN SENDIRI
+            'landowner': None, 
             'landowner_share_percentage': Decimal('0.00'), # Jatah pemilik 0%
             'document_url': 'https://drive.google.com/file/invoice-traktor',
         },
