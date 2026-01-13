@@ -6,18 +6,46 @@ from .models import Project
 from .serializers import ProjectSerializer
 from rest_framework.permissions import IsAuthenticated
 
+# [TAMBAHAN IMPORTS] Diperlukan untuk logika filter Investor
+from ownership.models import Ownership
+from investor.models import Investor
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated]) 
 def list_project(request):
-    # [TRANSPARANSI] Semua user login (Investor, Viewer, dll) BISA melihat semua proyek
-    projects = Project.objects.all().order_by('-start_date')
+    user = request.user
+    
+    # Default: Ambil semua proyek (untuk Admin, Operator, Viewer)
+    projects = Project.objects.select_related('asset').all().order_by('-start_date')
+
+    # [LOGIC KHUSUS INVESTOR]
+    # Jika yang login adalah Investor, filter hanya proyek yang asetnya mereka miliki
+    if user.role and user.role.name == 'Investor':
+        try:
+            # 1. Dapatkan profile investor dari user yang login
+            investor_profile = Investor.objects.get(user=user)
+            
+            # 2. Cari ID aset yang dimiliki oleh investor ini di tabel Ownership
+            owned_asset_ids = Ownership.objects.filter(
+                investor=investor_profile
+            ).values_list('asset_id', flat=True)
+            
+            # 3. Filter proyek berdasarkan aset tersebut
+            projects = projects.filter(asset_id__in=owned_asset_ids)
+            
+        except Investor.DoesNotExist:
+            # Jika user role Investor tapi belum terdaftar di tabel Investor, kosongkan data
+            projects = Project.objects.none()
+        except Exception:
+            # Safety catch
+            projects = Project.objects.none()
+
     serializer = ProjectSerializer(projects, many=True)
     return Response(serializer.data)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated]) 
 def tambah_project(request):
-    # [PERBAIKAN] Fungsi ini dikembalikan agar match dengan urls.py Anda
     # Hanya Admin/Superadmin yang boleh create
     is_allowed = request.user.is_superuser or (
         request.user.role and request.user.role.name in ['Admin', 'Superadmin']
