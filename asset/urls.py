@@ -2,10 +2,7 @@ from django.urls import path
 from . import views  
 
 urlpatterns = [
-    path('aset/', views.list_aset),
-    path('aset/tambah/', views.tambah_aset),
-    path('aset/<int:pk>/', views.asset_detail),
-    path('owner/', views.list_owner),
-    path('owner/tambah/', views.tambah_owner),
-    path('owner/<int:pk>/', views.owner_detail),
+    path('aset/', views.list_aset, name='list-aset'),
+    path('aset/tambah/', views.tambah_aset, name='tambah-aset'),
+    path('aset/<int:pk>/', views.asset_detail, name='detail-aset'),
 ]

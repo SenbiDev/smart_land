@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class DistributionDetailConfig(AppConfig):
+class SalesConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'distribution_detail'
+    name = 'sales'

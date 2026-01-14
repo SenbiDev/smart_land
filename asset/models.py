@@ -1,19 +1,7 @@
 from django.db import models
 
-# Pemilik Lahan/Aset Fisik
-class Owner(models.Model):
-    nama = models.CharField(max_length=100)
-    kontak = models.CharField(max_length=100, null=True, blank=True)
-    alamat = models.TextField(null=True, blank=True)
-    
-    # Info rekening untuk transfer bagi hasil
-    nomor_rekening = models.CharField(max_length=50, null=True, blank=True)
-    bank = models.CharField(max_length=50, null=True, blank=True)
-
-    def __str__(self):
-        return self.nama
-
 class Asset(models.Model):
+    # --- PILIHAN (SAMA PERSIS DENGAN KODE LAMA) ---
     ASSET_TYPES = [
         ('lahan', 'Lahan'),
         ('alat', 'Alat'),
@@ -30,31 +18,29 @@ class Asset(models.Model):
         ('personal_ownership', 'Personal Ownership'),
     ]
 
-    # ✅ ForeignKey - 1 Owner bisa punya banyak Asset
-    landowner = models.ForeignKey(
-        Owner, 
-        on_delete=models.SET_NULL,
-        null=True, 
-        blank=True,
-        related_name='assets',
-        verbose_name='Pemilik Lahan'
-    )
-    
+    # --- FIELD ---
     name = models.CharField(max_length=100, verbose_name='Nama Aset')
+    
+    # Tipe Aset
     type = models.CharField(max_length=100, choices=ASSET_TYPES, verbose_name='Tipe Aset')
+    
     location = models.CharField(max_length=100, verbose_name='Lokasi')
-    size = models.FloatField(verbose_name='Ukuran (m²)')
+    size = models.FloatField(verbose_name='Ukuran (m²)', null=True, blank=True)
+    
     value = models.DecimalField(max_digits=20, decimal_places=2, verbose_name='Nilai Aset')
     acquisition_date = models.DateField(verbose_name='Tanggal Akuisisi')
+    
+    # Status Kepemilikan
     ownership_status = models.CharField(
         max_length=50, 
         choices=OWNERSHIP_STATUS_CHOICES,
         verbose_name='Status Kepemilikan'
     )
-    document_url = models.TextField(null=True, blank=True, verbose_name='Dokumen')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    # Persentase bagi hasil untuk pemilik lahan (default 10%)
+    
+    # [INFO PEMILIK] Hanya teks, tidak ada tabel terpisah
+    landowner = models.CharField(max_length=100, null=True, blank=True, verbose_name='Nama Pemilik Lahan')
+    
+    # Persentase Bagi Hasil (Angka)
     landowner_share_percentage = models.DecimalField(
         max_digits=5, 
         decimal_places=2, 
@@ -62,22 +48,13 @@ class Asset(models.Model):
         verbose_name='% Bagi Hasil Pemilik'
     )
 
+    # [UPLOAD] Ganti document_url jadi ImageField
+    image = models.ImageField(upload_to='assets/', null=True, blank=True, verbose_name='Foto/Dokumen')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
     def __str__(self):
         return self.name
-
-    @property
-    def investors(self):
-        """Daftar investor yang berinvestasi di aset ini"""
-        return [o.investor for o in self.ownerships.all()]
-    
-    @property
-    def total_investment(self):
-        """Total investasi yang masuk ke aset ini"""
-        from django.db.models import Sum
-        total = self.ownerships.aggregate(
-            total=Sum('funding__amount')
-        )['total']
-        return total or 0
 
     class Meta:
         verbose_name = 'Aset'

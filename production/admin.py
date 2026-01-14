@@ -1,10 +1,16 @@
 from django.contrib import admin
-from django.contrib import admin
 from .models import Production
 
-# Register your models here.
 @admin.register(Production)
 class ProductionAdmin(admin.ModelAdmin):
-    list_display = ('asset', 'date', 'quantity', 'unit', 'unit_price', 'total_value', 'created_at')
-    list_filter = ('asset', 'date')
-    search_fields = ('asset__name',)
+    list_display = (
+        'product_name', 
+        'quantity', 
+        'unit', 
+        'quality', 
+        'asset', 
+        'date'
+    )
+    list_filter = ('quality', 'date', 'asset')
+    search_fields = ('product_name', 'notes')
+    ordering = ('-date',)

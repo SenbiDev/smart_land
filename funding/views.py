@@ -1,122 +1,61 @@
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.response import Response
 from rest_framework import status
-from authentication.permissions import IsAdminOrSuperadmin, IsViewerOrInvestorReadOnly, IsOperatorOrAdmin
-from django.db.models import Sum, F, DecimalField, Case, When, Value, FloatField
-from django.db.models.functions import Coalesce
-from decimal import Decimal 
+from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Funding
-from .serializers import FundingCreateUpdateSerializer, FundingDetailSerializer
+from .serializers import FundingSerializer
+from authentication.permissions import IsAdminOrSuperadmin
+from rest_framework.permissions import IsAuthenticated
 
-@api_view(['GET', 'POST'])
-@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly | IsOperatorOrAdmin]) 
-def funding_list(request):
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_funding(request):
+    # Filter opsional: ?type=investor
+    source_type = request.query_params.get('type')
+    search = request.query_params.get('search')
     
-    if request.method == 'GET':
-        queryset = Funding.objects.select_related('source', 'project').all()
+    queryset = Funding.objects.all()
+    
+    if source_type:
+        queryset = queryset.filter(source_type=source_type)
+    if search:
+        queryset = queryset.filter(source_name__icontains=search)
         
-        if request.user.role and request.user.role.name == 'Investor':
-            queryset = queryset.filter(project__asset__ownerships__investor__user=request.user).distinct()
-        
-        asset_id = request.query_params.get('asset_id')
-        
-        if asset_id == 'unallocated':
-            queryset = queryset.filter(project__isnull=True)
-        elif asset_id and asset_id != 'all':
-            try:
-                queryset = queryset.filter(project__asset_id=int(asset_id))
-            except (ValueError, TypeError):
-                pass
+    serializer = FundingSerializer(queryset, many=True, context={'request': request})
+    return Response(serializer.data)
 
-        queryset = queryset.annotate(
-            total_terpakai=Coalesce(
-                Sum('expenses__amount'), 
-                Decimal('0.0'), 
-                output_field=DecimalField()
-            )
-        ).annotate(
-            sisa_dana=F('amount') - F('total_terpakai'),
-            persen_terpakai=Case(
-                When(amount=Decimal('0.0'), then=Value(0.0)), 
-                default=(F('total_terpakai') * 100.0 / F('amount')),
-                output_field=FloatField()
-            )
-        )
-
-        status_filter = request.query_params.get('status')
-        if status_filter and status_filter != 'all':
-            queryset = queryset.filter(status=status_filter)
-
-        queryset = queryset.order_by('-date_received')
-        serializer = FundingDetailSerializer(queryset, many=True)
-
-        return Response(serializer.data)
-
-    if request.method == 'POST':
-        is_allowed = request.user.is_superuser or (
-            request.user.role and request.user.role.name in ['Admin', 'Superadmin']
-        )
-
-        if not is_allowed:
-             return Response({'error': 'Hanya Admin yang dapat menambah data.'}, status=status.HTTP_403_FORBIDDEN)
-        
-        serializer = FundingCreateUpdateSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+@api_view(['POST'])
+@permission_classes([IsAdminOrSuperadmin])
+@parser_classes([MultiPartParser, FormParser]) # Support Upload
+def create_funding(request):
+    serializer = FundingSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin | IsViewerOrInvestorReadOnly | IsOperatorOrAdmin])
+@permission_classes([IsAdminOrSuperadmin])
+@parser_classes([MultiPartParser, FormParser])
 def funding_detail(request, pk):
     try:
-        queryset = Funding.objects.select_related('source', 'project')
-        queryset = queryset.annotate(
-            total_terpakai=Coalesce(
-                Sum('expenses__amount'), 
-                Decimal('0.0'), 
-                output_field=DecimalField()
-            )
-        ).annotate(
-            sisa_dana=F('amount') - F('total_terpakai'),
-            persen_terpakai=Case(
-                When(amount=Decimal('0.0'), then=Value(0.0)), 
-                default=(F('total_terpakai') * 100.0 / F('amount')),
-                output_field=FloatField()
-            )
-        )
-        
-        funding_instance = queryset.get(pk=pk)
-
+        funding = Funding.objects.get(pk=pk)
     except Funding.DoesNotExist:
-        return Response({'error': 'funding not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    if request.user.role and request.user.role.name == 'Investor':
-        has_access = False
-        if funding_instance.project and funding_instance.project.asset:
-            has_access = funding_instance.project.asset.ownerships.filter(investor__user=request.user).exists()
-        
-        if not has_access:
-             return Response({'error': 'Anda tidak memiliki akses ke data pendanaan ini.'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'error': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = FundingDetailSerializer(funding_instance)
+        serializer = FundingSerializer(funding, context={'request': request})
         return Response(serializer.data)
 
     elif request.method == 'PUT':
-        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
-             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = FundingCreateUpdateSerializer(funding_instance, data=request.data)
+        serializer = FundingSerializer(funding, data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-        if not (request.user.is_superuser or (request.user.role and request.user.role.name in ['Admin', 'Superadmin'])):
-             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
-
-        funding_instance.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        if funding.proof_image:
+            funding.proof_image.delete(save=False)
+        funding.delete()
+        return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)

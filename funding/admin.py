@@ -1,8 +1,16 @@
 from django.contrib import admin
-from .models import FundingSource
+from .models import Funding
 
-# Register your models here.
-
-@admin.register(FundingSource)
-class FundingSourceAdmin(admin.ModelAdmin):
-    list_display = ['id', 'name', 'type']
+@admin.register(Funding)
+class FundingAdmin(admin.ModelAdmin):
+    list_display = (
+        'source_name', 
+        'source_type', 
+        'amount', 
+        'shares', 
+        'date_received', 
+        'payment_method'
+    )
+    list_filter = ('source_type', 'payment_method', 'date_received')
+    search_fields = ('source_name', 'notes')
+    ordering = ('-date_received',)

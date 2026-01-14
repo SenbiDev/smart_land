@@ -1,176 +1,47 @@
-from decimal import Decimal
-from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from django.shortcuts import get_object_or_404
 from .models import Production
-from .serializers import ProductionCreateUpdateSerializer, ProductionDetailSerializer
-from asset.models import Asset
-from ownership.models import Ownership
-from profit_distribution.models import ProfitDistribution
-from distribution_detail.models import DistributionDetail
-from authentication.permissions import IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
+from .serializers import ProductionSerializer
+# [PERBAIKAN] Gunakan nama yang sesuai dengan file permissions.py Anda
+from authentication.permissions import IsOperatorOrAdmin 
+from rest_framework.permissions import IsAuthenticated
 
-@api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
-def production_list(request):
-    
-    if request.method == 'GET':
-        queryset = Production.objects.select_related('asset').all().order_by('-date')
-        
-        # --- REFACTOR START: Data Scoping untuk Investor ---
-        if request.user.role and request.user.role.name == 'Investor':
-            # Investor hanya melihat produksi dari aset yang dia miliki unitnya (Ownership)
-            queryset = queryset.filter(asset__ownerships__investor__user=request.user).distinct()
-        # --- REFACTOR END ---
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_production(request):
+    queryset = Production.objects.select_related('asset').all()
+    serializer = ProductionSerializer(queryset, many=True)
+    return Response(serializer.data)
 
-        asset_id = request.query_params.get('asset')
-        if asset_id and asset_id != 'all':
-            queryset = queryset.filter(asset_id=asset_id)
-            
-        search = request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(name__icontains=search)
-            
-        type_filter = request.query_params.get('type')
-        if type_filter and type_filter != 'all':
-            queryset = queryset.filter(asset__type=type_filter)
-            
-        status_filter = request.query_params.get('status')
-        if status_filter and status_filter != 'all':
-            queryset = queryset.filter(status=status_filter)
-            
-        serializer = ProductionDetailSerializer(queryset, many=True)
-        return Response(serializer.data)
+@api_view(['POST'])
+@permission_classes([IsOperatorOrAdmin]) # Gunakan IsOperatorOrAdmin
+def create_production(request):
+    serializer = ProductionSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    elif request.method == 'POST':
-        # Permission IsViewerOrInvestorReadOnly akan menolak akses ini untuk Investor/Viewer
-        # karena POST bukan SAFE_METHOD
-        serializer = ProductionCreateUpdateSerializer(data=request.data)
-        if serializer.is_valid():
-            quantity = serializer.validated_data['quantity']
-            unit_price = serializer.validated_data['unit_price']
-            total_value = Decimal(str(quantity)) * unit_price
-
-            production = serializer.save(total_value=total_value)
-            
-            # --- Logika Otomatis Bagi Hasil ---
-            # [FIX] Hanya hitung jika status TERJUAL
-            if production.status == 'terjual':
-                asset = production.asset
-                net_profit = total_value
-                # Hindari pembagian dengan nol atau error desimal
-                owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
-                owner_share = net_profit * owner_share_percent_decimal
-                investor_share_total = net_profit - owner_share
-                
-                ownerships = Ownership.objects.filter(asset=asset)
-                total_units = sum(o.units for o in ownerships) or 1  
-
-                distribution, created = ProfitDistribution.objects.update_or_create(
-                    production=production,
-                    defaults={
-                        'period': str(production.date),
-                        'net_profit': net_profit,
-                        'landowner_share': owner_share,
-                        'investor_share': investor_share_total,
-                        'distribution_date': timezone.now().date()
-                    }
-                )
-
-                if not created:
-                    distribution.details.all().delete()
-
-                for o in ownerships:
-                    percent = o.units / total_units
-                    share = investor_share_total * Decimal(str(percent))
-                    DistributionDetail.objects.create(
-                        distribution=distribution,
-                        investor=o.investor,
-                        ownership_percentage=round(percent * 100, 2),
-                        amount_received=share
-                    )
-            
-            return_data = ProductionDetailSerializer(production).data
-            return Response(return_data, status=status.HTTP_201_CREATED)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsOperatorOrAdmin]) # Gunakan IsOperatorOrAdmin
 def production_detail(request, pk):
-    # Gunakan queryset filter untuk keamanan level objek jika perlu, 
-    # tapi get_object_or_404 standar cukup aman jika ID tidak bisa ditebak.
-    # Untuk keamanan ekstra, kita bisa cek permission di sini juga.
-    production = get_object_or_404(Production, pk=pk)
-
-    # Cek akses Investor terhadap detail produksi spesifik
-    if request.user.role and request.user.role.name == 'Investor':
-        has_access = Ownership.objects.filter(
-            asset=production.asset, 
-            investor__user=request.user
-        ).exists()
-        if not has_access:
-            return Response({'error': 'Anda tidak memiliki akses ke data produksi ini.'}, status=status.HTTP_403_FORBIDDEN)
+    try:
+        production = Production.objects.get(pk=pk)
+    except Production.DoesNotExist:
+        return Response({'error': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = ProductionDetailSerializer(production)
+        serializer = ProductionSerializer(production)
         return Response(serializer.data)
 
-    if request.method in ['PUT', 'PATCH']:
-        data = request.data.copy()
-        
-        quantity = float(data.get('quantity', production.quantity))
-        unit_price = Decimal(data.get('unit_price', production.unit_price))
-        total_value = Decimal(str(quantity)) * unit_price
-
-        serializer = ProductionCreateUpdateSerializer(production, data=data, partial=(request.method == 'PATCH'))
+    elif request.method == 'PUT':
+        serializer = ProductionSerializer(production, data=request.data)
         if serializer.is_valid():
-            production = serializer.save(total_value=total_value)
-            
-            # Recalculate Profit Distribution
-            # [FIX] Hanya hitung jika status TERJUAL
-            if production.status == 'terjual':
-                asset = production.asset
-                net_profit = total_value
-                owner_share_percent_decimal = (asset.landowner_share_percentage or Decimal('0')) / Decimal("100.0")
-                owner_share = net_profit * owner_share_percent_decimal
-                investor_share_total = net_profit - owner_share
-                
-                ownerships = Ownership.objects.filter(asset=asset)
-                total_units = sum(o.units for o in ownerships) or 1
-
-                distribution, created = ProfitDistribution.objects.update_or_create(
-                    production=production,
-                    defaults={
-                        'period': str(production.date),
-                        'net_profit': net_profit,
-                        'landowner_share': owner_share,
-                        'investor_share': investor_share_total,
-                        'distribution_date': timezone.now().date()
-                    }
-                )
-
-                if not created:
-                    distribution.details.all().delete()
-
-                for o in ownerships:
-                    percent = o.units / total_units
-                    share = investor_share_total * Decimal(str(percent))
-                    DistributionDetail.objects.create(
-                        distribution=distribution,
-                        investor=o.investor,
-                        ownership_percentage=round(percent * 100, 2),
-                        amount_received=share
-                    )
-
-            return_data = ProductionDetailSerializer(production).data
-            return Response(return_data)
-
+            serializer.save()
+            return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
         production.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)

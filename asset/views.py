@@ -1,47 +1,44 @@
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions
-from django.db.models import ProtectedError # [PENTING] Untuk menangkap error hapus
-from .models import Asset, Owner
-# [PERBAIKAN] Menggunakan nama serializer yang benar (AsetSerializer)
-from .serializers import AsetSerializer, AsetCreateUpdateSerializer, OwnerSerializer
+from rest_framework.parsers import MultiPartParser, FormParser
+from .models import Asset
+from .serializers import AsetSerializer, AsetCreateUpdateSerializer
 from authentication.permissions import IsAdminOrSuperadmin
 from rest_framework.permissions import IsAuthenticated 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_aset(request):
-    assets = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').all()
-    
-    # Data Scoping: Investor hanya melihat aset yang dia miliki sahamnya
-    if request.user.role and request.user.role.name == 'Investor':
-        assets = assets.filter(ownerships__investor__user=request.user).distinct()
-
-    serializer = AsetSerializer(assets, many=True)
+    # Hapus select_related('landowner') karena tabel owner sudah tidak ada
+    assets = Asset.objects.prefetch_related('ownerships__investor__user').all()
+    serializer = AsetSerializer(assets, many=True, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['POST'])
 @permission_classes([IsAdminOrSuperadmin]) 
+@parser_classes([MultiPartParser, FormParser]) # Support Upload Gambar
 def tambah_aset(request):
     serializer = AsetCreateUpdateSerializer(data=request.data)
     if serializer.is_valid():
         asset_instance = serializer.save()
-        # Ambil ulang data lengkap untuk response
-        asset = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').get(pk=asset_instance.id)
-        return_serializer = AsetSerializer(asset)
+        # Ambil data lengkap untuk response
+        asset = Asset.objects.prefetch_related('ownerships__investor__user').get(pk=asset_instance.id)
+        return_serializer = AsetSerializer(asset, context={'request': request})
         return Response(return_serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([IsAdminOrSuperadmin]) 
+@parser_classes([MultiPartParser, FormParser]) # Support Upload Gambar saat Edit
 def asset_detail(request, pk):
     try:
-        asset = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').get(pk=pk)
+        asset = Asset.objects.prefetch_related('ownerships__investor__user').get(pk=pk)
     except Asset.DoesNotExist:
         return Response({'error': 'Asset not found'}, status=status.HTTP_404_NOT_FOUND)
-    
+
     if request.method == 'GET':
-        serializer = AsetSerializer(asset)
+        serializer = AsetSerializer(asset, context={'request': request})
         return Response(serializer.data)
 
     elif request.method == 'PUT':
@@ -49,66 +46,14 @@ def asset_detail(request, pk):
         if serializer.is_valid():
             serializer.save()
             asset.refresh_from_db()
-            updated_asset = Asset.objects.select_related('landowner').prefetch_related('ownerships__investor__user').get(pk=asset.id)
-            return_serializer = AsetSerializer(updated_asset)
+            updated_asset = Asset.objects.prefetch_related('ownerships__investor__user').get(pk=pk)
+            return_serializer = AsetSerializer(updated_asset, context={'request': request})
             return Response(return_serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-        try:
-            asset.delete()
-            return Response({'message': 'Asset deleted'}, status=status.HTTP_204_NO_CONTENT)
-        except ProtectedError:
-            # [PERBAIKAN] Menangkap error PROTECT dan memberikan pesan yang jelas
-            return Response(
-                {
-                    'error': 'Gagal Menghapus: Aset ini masih digunakan dalam Proyek, Produksi, atau memiliki Investor aktif. Harap hapus data terkait terlebih dahulu sebelum menghapus aset ini.'
-                }, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-@api_view(['GET'])
-@permission_classes([IsAdminOrSuperadmin])
-def list_owner(request):
-    owners = Owner.objects.prefetch_related('assets').all()
-    serializer = OwnerSerializer(owners, many=True)
-    return Response(serializer.data)
-
-@api_view(['POST'])
-@permission_classes([IsAdminOrSuperadmin])
-def tambah_owner(request):
-    serializer = OwnerSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin])
-def owner_detail(request, pk):
-    try:
-        owner = Owner.objects.prefetch_related('assets').get(pk=pk)
-    except Owner.DoesNotExist:
-        return Response({'error': 'Owner not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    if request.method == 'GET':
-        serializer = OwnerSerializer(owner)
-        return Response(serializer.data)
-
-    elif request.method == 'PUT':
-        serializer = OwnerSerializer(owner, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    elif request.method == 'DELETE':
-        # Optional: Tambahkan try-except ProtectedError di sini juga jika Owner diprotect
-        try:
-            owner.delete()
-            return Response({'message': 'Owner deleted'}, status=status.HTTP_204_NO_CONTENT)
-        except ProtectedError:
-             return Response(
-                {'error': 'Gagal Menghapus: Pemilik ini masih memiliki Aset yang terdaftar. Hapus asetnya terlebih dahulu.'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Hapus gambar fisik jika ada (opsional, Django biasanya tidak auto hapus file)
+        if asset.image:
+            asset.image.delete(save=False)
+        asset.delete()
+        return Response({'message': 'Asset deleted'}, status=status.HTTP_204_NO_CONTENT)
