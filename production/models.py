@@ -2,6 +2,19 @@ from django.db import models
 from django.utils import timezone
 from asset.models import Asset
 
+# 1. MASTER PRODUK (Gudang Global)
+# Ini yang nanti muncul di Dropdown saat Penjualan
+class Product(models.Model):
+    name = models.CharField(max_length=100, verbose_name="Nama Produk (Misal: Telur)")
+    unit = models.CharField(max_length=20, verbose_name="Satuan (Kg/Liter)")
+    
+    # Stok Global (Dihitung otomatis saat Produksi/Penjualan)
+    current_stock = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Stok Saat Ini")
+
+    def __str__(self):
+        return f"{self.name} (Stok: {self.current_stock} {self.unit})"
+
+# 2. RIWAYAT PRODUKSI (Log Panen)
 class Production(models.Model):
     QUALITY_CHOICES = [
         ('A', 'Grade A (Sangat Baik)'),
@@ -10,25 +23,24 @@ class Production(models.Model):
         ('rejected', 'Rejected/Rusak'),
     ]
 
-    # Sumber Hasil (Dari Aset mana?)
-    # on_delete=models.SET_NULL: Jika aset dihapus, riwayat panen TETAP ADA (penting untuk laporan)
     asset = models.ForeignKey(Asset, on_delete=models.SET_NULL, null=True, related_name='productions', verbose_name="Asal Aset")
     
-    # Detail Produk
-    product_name = models.CharField(max_length=255, verbose_name="Nama Produk")
-    quantity = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Jumlah")
-    unit = models.CharField(max_length=50, verbose_name="Satuan", help_text="Contoh: Kg, Liter, Ikat")
-    quality = models.CharField(max_length=20, choices=QUALITY_CHOICES, default='A', verbose_name="Kualitas/Grade")
+    # [UBAH] Link ke Master Product agar nama konsisten
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='production_logs', verbose_name="Pilih Produk")
     
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Jumlah Hasil")
+    quality = models.CharField(max_length=20, choices=QUALITY_CHOICES, default='A', verbose_name="Kualitas")
     date = models.DateField(default=timezone.now, verbose_name="Tanggal Panen")
-    notes = models.TextField(null=True, blank=True, verbose_name="Catatan")
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        ordering = ['-date']
-        verbose_name = 'Stok Masuk (Produksi)'
-        verbose_name_plural = 'Riwayat Produksi'
+    def save(self, *args, **kwargs):
+        # Saat Panen disimpan -> Tambah Stok Global
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new:
+            self.product.current_stock += self.quantity
+            self.product.save()
 
     def __str__(self):
-        return f"{self.product_name} - {self.quantity} {self.unit}"
+        return f"Panen {self.product.name} - {self.quantity}"

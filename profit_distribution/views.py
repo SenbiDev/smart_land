@@ -18,7 +18,7 @@ def list_distribution(request):
 def create_distribution(request):
     serializer = ProfitDistributionSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save()
+        serializer.save() # Ini akan memanggil logika save() di models.py
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
