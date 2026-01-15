@@ -6,34 +6,20 @@ class ExpenseCreateUpdateSerializer(serializers.ModelSerializer):
         model = Expense
         fields = '__all__'
 
-    def validate(self, data):
-        # ... validasi logika bisnis ...
-        return data
-
 class ExpenseDetailSerializer(serializers.ModelSerializer):
-    # Gunakan SerializerMethodField agar AMAN jika relasi null
-    project_name = serializers.SerializerMethodField()
-    asset_name = serializers.SerializerMethodField()
-    funding_source_name = serializers.SerializerMethodField()
-    
+    # Field proof_image otomatis di-handle DRF menjadi URL jika ada filenya
+    proof_image = serializers.ImageField(max_length=None, use_url=True, allow_null=True, required=False)
+
     class Meta:
         model = Expense
         fields = [
-            'id', 'category', 'amount', 'date', 'description', 
-            'proof_url', 'project_id', 'funding_id', 'created_at',
-            'project_name', 'asset_name', 'funding_source_name'
+            'id', 
+            'title',       # Pastikan title masuk
+            'category', 
+            'amount', 
+            'date', 
+            'recipient',   # Pastikan recipient masuk
+            'description', 
+            'proof_image', # Sesuaikan dengan nama di Model (bukan proof_url)
+            'created_at'
         ]
-
-    def get_project_name(self, obj):
-        return obj.project_id.name if obj.project_id else '-'
-
-    def get_asset_name(self, obj):
-        # Akses nested relation dengan aman
-        if obj.project_id and obj.project_id.asset:
-            return obj.project_id.asset.name
-        return '-'
-
-    def get_funding_source_name(self, obj):
-        if obj.funding_id and obj.funding_id.source:
-            return obj.funding_id.source.name
-        return '-'

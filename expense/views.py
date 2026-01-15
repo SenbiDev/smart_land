@@ -1,107 +1,69 @@
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
-from django.shortcuts import get_object_or_404
+from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Expense
 from .serializers import ExpenseCreateUpdateSerializer, ExpenseDetailSerializer
-from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
+from authentication.permissions import IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
+@parser_classes([MultiPartParser, FormParser]) # Tambahkan ini agar bisa upload gambar
 def list_expense(request):
     if request.method == 'GET':
-        queryset = Expense.objects.select_related(
-            'project_id__asset',
-            'funding_id__source'
-        ).all().order_by('-date')
+        # 1. Query Dasar (Tanpa select_related ke project/funding yg sudah dihapus)
+        queryset = Expense.objects.all().order_by('-date')
         
-        # --- REFACTOR START: Data Scoping untuk Investor ---
-        if request.user.role and request.user.role.name == 'Investor':
-            # Investor hanya melihat expense dari project yang terkait dengan aset miliknya
-            # Asumsi field relasi di Expense adalah 'project_id' (sesuai kode asli)
-            queryset = queryset.filter(project_id__asset__ownerships__investor__user=request.user).distinct()
-        # --- REFACTOR END ---
-
-        asset_id = request.query_params.get('asset')
-        if asset_id and asset_id != 'all':
-            try:
-                queryset = queryset.filter(project_id__asset_id=int(asset_id))
-            except (ValueError, TypeError):
-                pass
-        
+        # 2. Search Logic
         search = request.query_params.get('search')
         if search:
             queryset = queryset.filter(
-                Q(description__icontains=search)
+                Q(description__icontains=search) | 
+                Q(title__icontains=search)
             )
         
+        # 3. Filter Category
         category = request.query_params.get('category')
         if category and category != 'all':
             queryset = queryset.filter(category=category)
         
-        serializer = ExpenseDetailSerializer(queryset, many=True)
+        serializer = ExpenseDetailSerializer(queryset, many=True, context={'request': request})
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        # IsViewerOrInvestorReadOnly mencegah Investor melakukan POST
         serializer = ExpenseCreateUpdateSerializer(data=request.data)
         if serializer.is_valid():
             expense = serializer.save()
-            return_data = ExpenseDetailSerializer(expense).data
+            # Gunakan context={'request': request} agar URL gambar lengkap (http://...)
+            return_data = ExpenseDetailSerializer(expense, context={'request': request}).data
             return Response(return_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
+@parser_classes([MultiPartParser, FormParser])
 def expense_detail(request, pk):
     try:
-        expense = Expense.objects.select_related(
-            'project_id__asset',
-            'funding_id__source'
-        ).get(pk=pk)
+        expense = Expense.objects.get(pk=pk)
     except Expense.DoesNotExist:
         return Response({'error': 'Expense not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Cek akses read untuk Investor pada detail expense
-    if request.user.role and request.user.role.name == 'Investor':
-        # Cek apakah expense ini terkait aset investor
-        # Perlu handling jika project_id null, tapi biasanya expense terikat project/asset
-        has_access = False
-        if expense.project_id and expense.project_id.asset:
-             has_access = expense.project_id.asset.ownerships.filter(investor__user=request.user).exists()
-        
-        if not has_access:
-             return Response({'error': 'Anda tidak memiliki akses ke data pengeluaran ini.'}, status=status.HTTP_403_FORBIDDEN)
-
     if request.method == 'GET':
-        serializer = ExpenseDetailSerializer(expense)
+        serializer = ExpenseDetailSerializer(expense, context={'request': request})
         return Response(serializer.data)
 
-    is_admin = request.user.is_superuser or (
-        request.user.role and request.user.role.name in ['Admin', 'Superadmin']
-    )
-
+    # Cek Permission untuk Edit/Delete (Hanya Admin/Operator)
+    # Investor/Viewer hanya Read-Only (sudah dihandle permission_classes, tapi double check role jika perlu)
+    
     if request.method == 'PUT':
-        if not is_admin:
-            return Response(
-                {'error': 'Hanya Admin yang dapat mengubah data.'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        serializer = ExpenseCreateUpdateSerializer(expense, data=request.data)
+        serializer = ExpenseCreateUpdateSerializer(expense, data=request.data, partial=True)
         if serializer.is_valid():
             expense = serializer.save()
-            return_data = ExpenseDetailSerializer(expense).data
+            return_data = ExpenseDetailSerializer(expense, context={'request': request}).data
             return Response(return_data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-        if not is_admin:
-            return Response(
-                {'error': 'Hanya Admin yang dapat menghapus data.'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
         expense.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
