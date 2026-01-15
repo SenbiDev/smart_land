@@ -8,6 +8,9 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('refresh/', views.refresh_view, name='refresh'),
     
+    # Endpoint Role (PENTING untuk User Management Frontend)
+    path('roles/', views.role_list, name='role-list'), 
+
     # User Management (Superadmin)
     path('users/', views.user_list_create, name='user-list-create'),
     path('users/<int:pk>/', views.user_detail, name='user-detail'),

@@ -1,12 +1,39 @@
 @echo off
 SETLOCAL EnableDelayedExpansion
 
-:: Pindah ke direktori di mana script ini berada agar path relatif bekerja
+:: Pindah ke direktori script
 cd /d "%~dp0"
 
 echo ========================================================
 echo    RESET DATABASE ^& SEED ROLE - LAHAN PINTAR
 echo ========================================================
+echo.
+
+:: --- 0. CEK & AKTIVASI VIRTUAL ENVIRONMENT ---
+echo [0/4] Cek Virtual Environment...
+if exist "venv\Scripts\activate.bat" (
+    call "venv\Scripts\activate.bat"
+    echo        [INFO] Menggunakan venv.
+) else if exist "env\Scripts\activate.bat" (
+    call "env\Scripts\activate.bat"
+    echo        [INFO] Menggunakan env.
+) else (
+    echo        [WARNING] Folder venv/env tidak ditemukan!
+    echo        Script akan berjalan menggunakan Python Global.
+    echo        Pastikan library 'djangorestframework' sudah terinstall.
+    echo.
+)
+
+:: Cek apakah rest_framework terinstall
+python -c "import rest_framework" 2>nul
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Module 'rest_framework' tidak ditemukan!
+    echo Solusi: Jalankan 'pip install djangorestframework' atau 'pip install -r requirements.txt'
+    pause
+    exit /b
+)
+
 echo.
 echo [WARNING] Script ini akan:
 echo   1. MENGHAPUS database (db.sqlite3)
@@ -44,7 +71,7 @@ if exist "db.sqlite3" (
 echo.
 echo [2/4] Membersihkan file migrations...
 
-:: LIST APP KAMU (Tambahkan di sini jika ada app baru)
+:: LIST APP KAMU
 set APPS_LIST=asset authentication dashboard expense funding production profit_distribution sales
 
 for %%A in (%APPS_LIST%) do (
@@ -74,7 +101,7 @@ if %errorlevel% neq 0 goto ErrorHandler
 echo.
 echo [4/4] Seeding Data (Role ^& Admin)...
 
-:: Python One-Liner (Pastikan nama project 'smart_land' benar)
+:: Python One-Liner
 python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'smart_land.settings'); import django; django.setup(); from django.contrib.auth import get_user_model; from authentication.models import Role; User = get_user_model(); roles = [('Superadmin', 'Akses Penuh'), ('Admin', 'Akses Kelola'), ('Operator', 'Input Data'), ('Investor', 'Akses Pantau')]; [Role.objects.get_or_create(name=r[0], defaults={'description': r[1]}) for r in roles]; print('       > Roles Created'); super_role = Role.objects.get(name='Superadmin'); User.objects.create_superuser('admin', 'admin@lahan.com', 'admin', role=super_role) if not User.objects.filter(username='admin').exists() else print('       > Admin already exists');"
 
 if %errorlevel% neq 0 goto ErrorHandler
@@ -90,5 +117,6 @@ exit /b
 :ErrorHandler
 echo.
 echo [FATAL ERROR] Terjadi kesalahan saat eksekusi.
+echo Cek pesan error di atas (biasanya missing library).
 pause
 exit /b 1

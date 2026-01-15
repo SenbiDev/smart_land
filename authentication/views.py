@@ -5,8 +5,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import CustomUser
-from .serializers import RegisterSerializer, UserSerializer
+from .models import CustomUser, Role  # Pastikan Role diimport
+from .serializers import RegisterSerializer, UserSerializer, RoleSerializer # Pastikan RoleSerializer ada
 from django.contrib.auth import authenticate
 from django.conf import settings
 from .permissions import IsSuperadmin
@@ -56,7 +56,16 @@ def login_view(request):
     user = authenticate(username=username, password=password)
     if user:
         refresh = RefreshToken.for_user(user)
-        user_data = {'id': user.id, 'username': user.username, 'email': user.email, 'role': user.role}
+        # PERBAIKAN: Ambil .name dari role
+        role_name = user.role.name if user.role else None
+        
+        user_data = {
+            'id': user.id, 
+            'username': user.username, 
+            'email': user.email, 
+            'role': role_name 
+        }
+        
         response = Response({'user': user_data})
         set_auth_cookies(response, refresh)
         set_user_cookie(response, user_data)
@@ -70,7 +79,16 @@ def register_view(request):
     if serializer.is_valid():
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
-        user_data = {'id': user.id, 'username': user.username, 'email': user.email, 'role': user.role}
+        
+        role_name = user.role.name if user.role else None
+        
+        user_data = {
+            'id': user.id, 
+            'username': user.username, 
+            'email': user.email, 
+            'role': role_name
+        }
+        
         response = Response({'user': user_data}, status=status.HTTP_201_CREATED)
         set_auth_cookies(response, refresh)
         set_user_cookie(response, user_data)
@@ -91,21 +109,44 @@ def logout_view(request):
 def refresh_view(request):
     refresh_token = request.COOKIES.get('refresh_token')
     if not refresh_token:
+        refresh_token = request.data.get('refresh')
+
+    if not refresh_token:
         return Response({'error': 'Refresh token not found'}, status=status.HTTP_401_UNAUTHORIZED)
+        
     try:
         token = RefreshToken(refresh_token)
         user = CustomUser.objects.get(id=token['user_id'])
         new_refresh_token = RefreshToken.for_user(user)
-        user_data = {'id': user.id, 'username': user.username, 'email': user.email, 'role': user.role}
-        response = Response({'user': user_data})
+        
+        role_name = user.role.name if user.role else None
+        
+        user_data = {
+            'id': user.id, 
+            'username': user.username, 
+            'email': user.email, 
+            'role': role_name
+        }
+        
+        response = Response({
+            'access': str(new_refresh_token.access_token),
+            'user': user_data
+        })
         set_auth_cookies(response, new_refresh_token)
         set_user_cookie(response, user_data)
         return response
     except (TokenError, CustomUser.DoesNotExist):
         return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
 
-# --- User Management (Superadmin Only) ---
+# --- Role Management (PENTING: View Baru) ---
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def role_list(request):
+    roles = Role.objects.all()
+    serializer = RoleSerializer(roles, many=True)
+    return Response(serializer.data)
 
+# --- User Management ---
 @api_view(['GET', 'POST'])
 @permission_classes([IsSuperadmin])
 def user_list_create(request):

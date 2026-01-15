@@ -1,48 +1,51 @@
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import viewsets
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.db.models import Sum
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.db.models import Sum, Count
 
-# Import model-model baru yang sudah kita buat
+# Import Model dari app lain
 from asset.models import Asset
 from funding.models import Funding
 from expense.models import Expense
 from sales.models import Sale
-from profit_distribution.models import ProfitDistribution
+from production.models import Production
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def Dashboard(request):
-    # 1. Total Nilai Aset (Jumlah Aset Fisik)
-    total_assets = Asset.objects.count()
-    
-    # 2. Total Pendanaan Masuk (Investor + Donasi)
-    total_funding = Funding.objects.aggregate(total=Sum('amount'))['total'] or 0
-    
-    # 3. Total Penjualan (Revenue / Uang Masuk Operasional)
-    total_sales = Sale.objects.aggregate(total=Sum('total_price'))['total'] or 0
-    
-    # 4. Total Pengeluaran (Expense / Uang Keluar)
-    total_expense = Expense.objects.aggregate(total=Sum('amount'))['total'] or 0
-    
-    # 5. Estimasi Laba Bersih (Cashflow saat ini)
-    net_profit = float(total_sales) - float(total_expense)
-    
-    # 6. Total Bagi Hasil yang sudah dibagikan
-    total_distributed = ProfitDistribution.objects.filter(status='distributed').aggregate(total=Sum('total_distributed'))['total'] or 0
+class DashboardViewSet(viewsets.ViewSet):
+    permission_classes = [AllowAny] 
 
-    data = {
-        "summary": {
+    def list(self, request):
+        # 1. Hitung Total Aset
+        total_assets = Asset.objects.count()
+        total_asset_value = Asset.objects.aggregate(sum_val=Sum('value'))['sum_val'] or 0
+
+        # 2. Hitung Keuangan (Cashflow)
+        total_funding = Funding.objects.aggregate(sum_val=Sum('amount'))['sum_val'] or 0
+        total_revenue = Sale.objects.aggregate(sum_val=Sum('total_price'))['sum_val'] or 0
+        total_expense = Expense.objects.aggregate(sum_val=Sum('amount'))['sum_val'] or 0
+        
+        # Saldo Kas
+        total_cash_on_hand = (total_funding + total_revenue) - total_expense
+
+        # 3. Hitung Produksi
+        # Gunakan Revenue Penjualan sebagai representasi Nilai Yield sementara
+        total_yield = total_revenue 
+
+        # 4. Hitung Statistik Saham
+        SHARE_PRICE = 1000000
+        shares_sold = int(total_funding / SHARE_PRICE) 
+        shares_available = 1000 - shares_sold 
+
+        data = {
             "total_assets": total_assets,
-            "total_funding": float(total_funding),
-            "total_revenue": float(total_sales),
-            "total_expense": float(total_expense),
-            "net_profit": net_profit,
-            "total_distributed": float(total_distributed)
-        },
-        # Info tambahan untuk grafik sederhana di FE (Opsional)
-        "recent_sales": Sale.objects.order_by('-date')[:5].values('product_name', 'total_price', 'date'),
-        "recent_expenses": Expense.objects.order_by('-date')[:5].values('title', 'amount', 'date')
-    }
+            "total_asset_value": total_asset_value,
+            "total_funding": total_funding,
+            "total_revenue": total_revenue, # Tambahan untuk Frontend
+            "total_expense": total_expense, # Tambahan untuk Frontend
+            "total_cash_on_hand": total_cash_on_hand,
+            "total_yield": total_yield,
+            "shares_sold": shares_sold,
+            "shares_available": shares_available,
+            "ownership_percentage": [], 
+        }
 
-    return Response(data)
+        return Response(data)
