@@ -29,6 +29,7 @@ urlpatterns = [
     path('api/sales/', include('sales.urls')),           # Penjualan (Revenue) - App Baru
     path('api/profit-distribution/', include('profit_distribution.urls')), # Bagi Hasil Global
     path('api/dashboard/', include('dashboard.urls')),
+    path('api/settings/', include('site_settings.urls')),
 ]
 
 # Tambahan untuk melayani file media (Gambar Upload) saat Development

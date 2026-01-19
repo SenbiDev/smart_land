@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'sales',                
     'profit_distribution',
     'dashboard',
+    'site_settings',
 ]
 
 REST_FRAMEWORK = {

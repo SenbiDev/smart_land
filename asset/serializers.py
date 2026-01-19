@@ -2,9 +2,9 @@ from rest_framework import serializers
 from .models import Asset
 
 class AsetSerializer(serializers.ModelSerializer):
-    # Field kalkulasi (Read Only)
+    # [FIX] Gunakan SerializerMethodField agar tidak error 'AttributeError'
     investors_info = serializers.SerializerMethodField()
-    total_investment = serializers.ReadOnlyField()
+    total_investment = serializers.SerializerMethodField()
     
     # Format gambar agar tampil URL lengkap
     image = serializers.ImageField(max_length=None, use_url=True, allow_null=True, required=False)
@@ -14,26 +14,38 @@ class AsetSerializer(serializers.ModelSerializer):
         fields = [
             'id', 
             'name', 
-            'type',           # Pilihan lama (lahan, alat, dll)
+            'type',           
             'location', 
             'size', 
             'value',
             'acquisition_date', 
-            'ownership_status', # Pilihan lama (full_ownership, dll)
-            'image',            # Ganti document_url jadi image
-            'landowner',        # Sekarang ini teks biasa
+            'ownership_status', 
+            'image',            
+            'landowner',        
             'landowner_share_percentage', 
             'total_investment',
             'investors_info', 
             'created_at'
         ]
     
+    def get_total_investment(self, obj):
+        # [FIX] Hitung manual atau return 0 agar aman
+        try:
+            # Jika nanti ada model Ownership, hitung di sini. 
+            # Untuk sekarang return 0 atau value aset.
+            return getattr(obj, 'value', 0)
+        except Exception:
+            return 0
+
     def get_investors_info(self, obj):
         """
         Mengambil info investor dari tabel Ownership (Apps lain).
         """
-        # Kita gunakan try-except agar tidak error jika app ownership belum siap
         try:
+            # Gunakan getattr untuk menghindari crash jika relation belum ada
+            if not hasattr(obj, 'ownerships'):
+                return []
+                
             ownerships = obj.ownerships.select_related('investor__user').all()
             return [
                 {
@@ -45,13 +57,12 @@ class AsetSerializer(serializers.ModelSerializer):
                 }
                 for o in ownerships
             ]
-        except AttributeError:
+        except Exception:
             return []
 
 class AsetCreateUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer khusus untuk Input Data (Create/Update).
-    Memastikan validasi persentase berjalan.
     """
     image = serializers.ImageField(required=False)
 

@@ -1,54 +1,77 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Production, Product
-from .serializers import ProductionSerializer
-from authentication.permissions import IsOperatorOrAdmin 
 from rest_framework.permissions import IsAuthenticated
 
-# [TAMBAHKAN CODE INI]
-from rest_framework import serializers
+from .models import Production, Product
+from .serializers import ProductionSerializer, ProductSerializer
+from authentication.permissions import IsOperatorOrAdmin 
 
-class ProductSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Product
-        fields = ['id', 'name', 'unit', 'current_stock']
-
+# ==========================================
+# 1. MASTER PRODUK (GET & POST)
+# ==========================================
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
-def list_products(request):
-    """Master produk untuk dropdown di form Produksi & Penjualan"""
+def list_create_products(request):
     if request.method == 'GET':
-        products = Product.objects.all()
+        search_query = request.query_params.get('search', None)
+        products = Product.objects.all().order_by('name')
+        
+        if search_query:
+            products = products.filter(name__icontains=search_query)
+            
         serializer = ProductSerializer(products, many=True)
         return Response(serializer.data)
-    
+
     elif request.method == 'POST':
-        # Buat produk baru (hanya Admin/Operator)
         serializer = ProductSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# View yang sudah ada tetap di bawah ini...
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def list_production(request):
-    queryset = Production.objects.select_related('asset', 'product').all()
-    serializer = ProductionSerializer(queryset, many=True)
-    return Response(serializer.data)
-
-@api_view(['POST'])
+# ==========================================
+# 2. TRANSAKSI PRODUKSI (GET & POST)
+# ==========================================
+@api_view(['GET', 'POST'])
 @permission_classes([IsOperatorOrAdmin])
-def create_production(request):
-    serializer = ProductionSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+def list_create_productions(request):
+    if request.method == 'GET':
+        # select_related agar query join ke tabel asset dan product lebih efisien
+        queryset = Production.objects.select_related('asset', 'product').all().order_by('-date')
+        
+        # --- FILTERING LOGIC ---
+        asset_id = request.query_params.get('asset')
+        search = request.query_params.get('search')
+        status_param = request.query_params.get('status')
 
-@api_view(['GET', 'PUT', 'DELETE'])
+        if asset_id and asset_id != 'all':
+            queryset = queryset.filter(asset_id=asset_id)
+        
+        if status_param and status_param != 'all':
+            queryset = queryset.filter(status=status_param)
+
+        if search:
+            queryset = queryset.filter(product__name__icontains=search)
+        # -----------------------
+
+        serializer = ProductionSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    elif request.method == 'POST':
+        # [SOLUSI ERROR 500 & 405]
+        # Menerima data JSON dari frontend (ID produk, ID asset, dll)
+        serializer = ProductionSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Jika data tidak valid, return error 400 (Bad Request) agar ketahuan salahnya dimana
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# ==========================================
+# 3. DETAIL PRODUKSI (GET, PUT, PATCH, DELETE)
+# ==========================================
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsOperatorOrAdmin])
 def production_detail(request, pk):
     try:
@@ -60,8 +83,9 @@ def production_detail(request, pk):
         serializer = ProductionSerializer(production)
         return Response(serializer.data)
 
-    elif request.method == 'PUT':
-        serializer = ProductionSerializer(production, data=request.data)
+    elif request.method in ['PUT', 'PATCH']:
+        partial = request.method == 'PATCH'
+        serializer = ProductionSerializer(production, data=request.data, partial=partial)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)

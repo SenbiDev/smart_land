@@ -14,8 +14,8 @@ echo [0/4] Cek Virtual Environment...
 if exist "venv\Scripts\activate.bat" (
     call "venv\Scripts\activate.bat"
     echo        [INFO] Menggunakan venv.
-) else if exist "env\Scripts\activate.bat" (
-    call "env\Scripts\activate.bat"
+) else if exist ".env\Scripts\activate.bat" (
+    call ".env\Scripts\activate.bat"
     echo        [INFO] Menggunakan env.
 ) else (
     echo        [WARNING] Folder venv/env tidak ditemukan!
