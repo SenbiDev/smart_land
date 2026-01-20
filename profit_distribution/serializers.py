@@ -1,15 +1,16 @@
 from rest_framework import serializers
-from .models import ProfitDistribution
+from .models import ProfitDistribution, ProfitDistributionItem
+
+class ProfitDistributionItemSerializer(serializers.ModelSerializer):
+    investor_name = serializers.CharField(source='investor.name', read_only=True)
+    
+    class Meta:
+        model = ProfitDistributionItem
+        fields = ['id', 'investor', 'investor_name', 'amount', 'role', 'description']
 
 class ProfitDistributionSerializer(serializers.ModelSerializer):
+    items = ProfitDistributionItemSerializer(many=True, read_only=True)
+
     class Meta:
         model = ProfitDistribution
-        fields = '__all__'
-        # Mencegah user kirim data hitungan manual via API
-        read_only_fields = (
-            'landowner_total_amount', 
-            'investor_total_amount', 
-            'retained_earnings', 
-            'dividend_per_share', 
-            'distribution_details'
-        )
+        fields = ['id', 'date', 'total_distributed', 'notes', 'items', 'created_at']

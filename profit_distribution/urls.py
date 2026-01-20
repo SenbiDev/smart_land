@@ -2,8 +2,12 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Ubah menjadi 'profit-distributions/' 
-    path('profit-distributions/', views.list_distribution, name='list-distribution'),
-    path('profit-distributions/create/', views.create_distribution, name='create-distribution'),
-    path('profit-distributions/<int:pk>/', views.distribution_detail, name='detail-distribution'),
+    # list_create_distributions menangani GET list & POST save
+    path('', views.list_create_distributions, name='list-create-distribution'),
+    
+    # Endpoint khusus kalkulator preview
+    path('preview/', views.preview_distribution, name='preview-distribution'),
+    
+    # Detail & Delete
+    path('<int:pk>/', views.distribution_detail, name='detail-distribution'),
 ]
