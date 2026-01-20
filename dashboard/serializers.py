@@ -1,10 +1,11 @@
+# dashboard/serializers.py
 from rest_framework import serializers
 from .models import SystemConfig
 
 class SystemConfigSerializer(serializers.ModelSerializer):
-    # Daftarkan semua field hitungan di sini
-    total_assets = serializers.ReadOnlyField()      # Count
-    total_asset_value = serializers.ReadOnlyField() # Value Rp
+    # [FIX] HAPUS parameter source jika nama sama
+    total_assets = serializers.ReadOnlyField()
+    total_asset_value = serializers.ReadOnlyField()
     total_funding = serializers.ReadOnlyField()
     total_revenue = serializers.ReadOnlyField()
     total_expense = serializers.ReadOnlyField()
