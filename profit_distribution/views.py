@@ -24,70 +24,51 @@ def list_create_distributions(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        # Cek permission manual
         user_role = getattr(request.user.role, 'name', '') if request.user.role else ''
         if user_role not in ['Admin', 'Superadmin', 'Operator']:
              return Response({'detail': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
         data = request.data
         
-        # Validasi dan konversi nominal dengan Decimal
+        # Validasi Nominal
         raw_amount = data.get('total_distributed') or data.get('total_amount') or 0
         try:
             total_amount = Decimal(str(raw_amount))
-        except (InvalidOperation, ValueError, TypeError):
-            return Response(
-                {"detail": f"Nominal tidak valid: {raw_amount}"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        except:
+            return Response({"detail": "Nominal tidak valid"}, status=status.HTTP_400_BAD_REQUEST)
         
         if total_amount <= 0:
-            return Response(
-                {"detail": "Nominal harus lebih dari 0"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"detail": "Nominal harus lebih dari 0"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validasi dan parsing tanggal
+        # Validasi Tanggal
         date_str = data.get('date')
-        if not date_str:
-            return Response(
-                {"detail": "Tanggal harus diisi"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
         try:
             distribution_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        except (ValueError, TypeError):
-            return Response(
-                {"detail": f"Format tanggal tidak valid: {date_str}. Gunakan YYYY-MM-DD"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        except:
+            distribution_date = datetime.now().date()
 
         try:
             with transaction.atomic():
-                # 1. Simpan Header
+                # 1. Simpan Header Transaksi
                 distribution = ProfitDistribution.objects.create(
                     total_distributed=total_amount,
                     notes=data.get('notes', 'Bagi Hasil'),
                     date=distribution_date
                 )
 
-                # 2. Ambil Dana Investor Aktif
-                # ⚠️ FIX: Hapus .select_related('user') karena tidak ada field user
-                investor_fundings = Funding.objects.filter(source_type='investor')
-                
+                # Ambil Config untuk harga saham default
+                config, _ = SystemConfig.objects.get_or_create(id=1)
+                SHARE_PRICE = Decimal(str(config.share_price or 100000))
+                TOTAL_SYSTEM_SHARES = Decimal(str(config.total_system_shares or 15000))
+
                 items = []
                 
-                # A. Potongan Landowner
+                # --- A. BAGIAN LANDOWNER ---
                 active_assets = Asset.objects.all()
                 total_landowner_cut = Decimal('0')
                 
                 for asset in active_assets:
-                    try:
-                        pct = Decimal(str(asset.landowner_share_percentage or 0))
-                    except (InvalidOperation, ValueError, TypeError):
-                        pct = Decimal('0')
-                    
+                    pct = Decimal(str(asset.landowner_share_percentage or 0))
                     if pct > 0:
                         cut = (total_amount * pct) / Decimal('100')
                         total_landowner_cut += cut
@@ -96,60 +77,57 @@ def list_create_distributions(request):
                             distribution=distribution,
                             amount=cut,
                             role='Landowner',
-                            description=f"Fee Lahan: {asset.name}"
+                            description=f"Fee Lahan: {asset.name} ({pct}%)"
                         ))
 
-                # B. Bagian Investor
+                # --- B. BAGIAN INVESTOR ---
                 net_for_investors = total_amount - total_landowner_cut
                 
-                # Ambil Config Saham
-                try:
-                    config = SystemConfig.objects.first()
-                    TOTAL_SYSTEM_SHARES = Decimal(str(config.total_system_shares if config else 15000))
-                except:
-                    TOTAL_SYSTEM_SHARES = Decimal('15000')
-
                 # Hitung Dividen Per Lembar
                 dividend_per_share = Decimal('0')
                 if TOTAL_SYSTEM_SHARES > 0:
                     dividend_per_share = net_for_investors / TOTAL_SYSTEM_SHARES
 
-                # Bagikan ke Investor
+                # Ambil Funding Investor
+                investor_fundings = Funding.objects.filter(source_type='investor')
+                
                 for funding in investor_fundings:
-                    try:
-                        shares = Decimal(str(getattr(funding, 'shares', 0) or 0))
-                    except (InvalidOperation, ValueError, TypeError, AttributeError):
-                        shares = Decimal('0')
+                    # [FIX LOGIC] Ambil shares, jika 0 hitung manual
+                    shares = Decimal(str(getattr(funding, 'shares', 0) or 0))
+                    
+                    if shares <= 0:
+                        # Fallback: Hitung saham dari amount / harga
+                        f_amount = Decimal(str(funding.amount or 0))
+                        if f_amount > 0 and SHARE_PRICE > 0:
+                            shares = f_amount / SHARE_PRICE
                     
                     if shares > 0:
                         investor_share = shares * dividend_per_share
                         
-                        # ⚠️ FIX: Jangan assign investor=funding.user karena tidak ada
-                        items.append(ProfitDistributionItem(
-                            distribution=distribution,
-                            investor=None,  # Set None karena Funding tidak punya relasi User
-                            funding_source=funding,
-                            amount=investor_share,
-                            role='Investor',
-                            description=f"{funding.source_name} - Dividen ({shares:,.0f} lbr)"
-                        ))
+                        # Pastikan tidak membuat item Rp 0
+                        if investor_share > 0:
+                            items.append(ProfitDistributionItem(
+                                distribution=distribution,
+                                investor=None, # Funding tidak ada relasi direct user di model Anda saat ini
+                                funding_source=funding,
+                                amount=investor_share,
+                                role='Investor',
+                                description=f"{funding.source_name} - {shares:,.0f} Lbr"
+                            ))
                 
-                # Simpan Items
+                # Simpan Items (Ini yang mengurangi saldo Global)
                 if items:
                     ProfitDistributionItem.objects.bulk_create(items)
+                else:
+                    # Jaga-jaga: Jika tidak ada item yang terbentuk, throw error agar admin sadar
+                    raise Exception("Tidak ada penerima dana (Cek data Saham/Landowner)")
 
                 serializer = ProfitDistributionSerializer(distribution)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
         
         except Exception as e:
-            import traceback
-            error_detail = traceback.format_exc()
-            print(f"❌ Error Distribution: {e}")
-            print(f"📋 Traceback: {error_detail}")
-            return Response(
-                {"detail": f"Terjadi kesalahan: {str(e)}"}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            print(f"ERROR: {e}")
+            return Response({"detail": f"Gagal memproses: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ==========================================
 # 2. PREVIEW (POST)
@@ -159,66 +137,49 @@ def list_create_distributions(request):
 def preview_distribution(request):
     try:
         raw_amount = request.data.get('total_distributed') or request.data.get('total_amount') or 0
-        
-        try:
-            total_amount = Decimal(str(raw_amount))
-        except (InvalidOperation, ValueError, TypeError):
-            return Response(
-                {"detail": "Nominal tidak valid"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        total_amount = Decimal(str(raw_amount))
         
         if total_amount <= 0:
-            return Response(
-                {"detail": "Nominal harus lebih dari 0"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"detail": "Nominal harus > 0"}, status=400)
 
-        # 1. Hitung Potongan Landowner
+        # Config
+        config, _ = SystemConfig.objects.get_or_create(id=1)
+        SHARE_PRICE = Decimal(str(config.share_price or 100000))
+        TOTAL_SYSTEM_SHARES = Decimal(str(config.total_system_shares or 15000))
+
+        # 1. Landowner
         active_assets = Asset.objects.all()
         total_landowner_cut = Decimal('0')
-        
         for asset in active_assets:
-            try:
-                pct = Decimal(str(asset.landowner_share_percentage or 0))
-            except (InvalidOperation, ValueError, TypeError):
-                pct = Decimal('0')
-            
+            pct = Decimal(str(asset.landowner_share_percentage or 0))
             if pct > 0:
                 total_landowner_cut += (total_amount * pct) / Decimal('100')
 
-        # 2. Dana Bersih untuk Investor
+        # 2. Investor
         net_for_investors = total_amount - total_landowner_cut
-        
-        # 3. Ambil Config & Hitung Dividen
-        try:
-            config = SystemConfig.objects.first()
-            TOTAL_SYSTEM_SHARES = Decimal(str(config.total_system_shares if config else 15000))
-        except:
-            TOTAL_SYSTEM_SHARES = Decimal('15000')
-        
-        dividend_per_share = net_for_investors / TOTAL_SYSTEM_SHARES if TOTAL_SYSTEM_SHARES > 0 else Decimal('0')
+        dividend_per_share = net_for_investors / TOTAL_SYSTEM_SHARES if TOTAL_SYSTEM_SHARES > 0 else 0
 
-        # 4. Data Investor Saham
         investor_fundings = Funding.objects.filter(source_type='investor')
         investor_rows = []
-        total_payout_to_investors = Decimal('0')
+        total_payout_investors = Decimal('0')
 
         for f in investor_fundings:
-            try:
-                shares = Decimal(str(getattr(f, 'shares', 0) or 0))
-            except (InvalidOperation, ValueError, TypeError, AttributeError):
-                shares = Decimal('0')
+            shares = Decimal(str(getattr(f, 'shares', 0) or 0))
+            if shares <= 0:
+                 f_amount = Decimal(str(f.amount or 0))
+                 if f_amount > 0: shares = f_amount / SHARE_PRICE
             
             if shares > 0:
                 payout = shares * dividend_per_share
-                total_payout_to_investors += payout
+                total_payout_investors += payout
                 investor_rows.append({
-                    "name": f.source_name,  # ✅ Gunakan source_name dari Funding
+                    "name": f.source_name,
                     "role": "Investor",
                     "portion_info": f"{shares:,.0f} Lbr",
                     "amount": float(payout)
                 })
+
+        retained = net_for_investors - total_payout_investors
 
         return Response({
             "summary": {
@@ -226,19 +187,13 @@ def preview_distribution(request):
                 "landowner_total": float(total_landowner_cut),
                 "investor_net_pool": float(net_for_investors),
                 "dividend_per_share": float(dividend_per_share),
-                "retained_earnings": float(net_for_investors - total_payout_to_investors),
+                "retained_earnings": float(retained),
             },
             "investor_breakdown": investor_rows
         })
-        
+
     except Exception as e:
-        import traceback
-        print(f"❌ Preview Error: {e}")
-        print(f"📋 Traceback: {traceback.format_exc()}")
-        return Response(
-            {"detail": str(e)}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"detail": str(e)}, status=400)
 
 # ==========================================
 # 3. DETAIL & DELETE
@@ -249,16 +204,14 @@ def distribution_detail(request, pk):
     try:
         dist = ProfitDistribution.objects.prefetch_related('items').get(pk=pk)
     except ProfitDistribution.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(status=404)
 
     if request.method == 'GET':
         serializer = ProfitDistributionSerializer(dist)
         return Response(serializer.data)
 
     elif request.method == 'DELETE':
-        user_role = getattr(request.user.role, 'name', '') if request.user.role else ''
-        if user_role not in ['Admin', 'Superadmin']:
-             return Response({'detail': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
-        
+        if not (request.user.role and request.user.role.name in ['Admin', 'Superadmin']):
+             return Response({'detail': 'Permission denied'}, status=403)
         dist.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(status=204)
