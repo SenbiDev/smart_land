@@ -13,20 +13,20 @@ class SystemConfig(models.Model):
     def __str__(self):
         return "Pengaturan Sistem & Laporan Global"
 
-    # --- FUNGSI HITUNG OTOMATIS (LOGIKA BENAR) ---
+    # --- FUNGSI HITUNG OTOMATIS ---
     
     def total_asset_value(self):
         from asset.models import Asset
         total = Asset.objects.aggregate(Sum('value'))['value__sum'] or 0
-        return f"Rp {total:,.2f}"
+        return total # Return angka raw, biar frontend yang format
 
     def total_cash_on_hand(self):
         from funding.models import Funding
         from expense.models import Expense
         from sales.models import Sale
-        from profit_distribution.models import ProfitDistribution
+        from profit_distribution.models import ProfitDistributionItem
 
-        # 1. Total Pemasukan
+        # 1. Total Pemasukan (Funding + Sales)
         investor_money = Funding.objects.aggregate(Sum('amount'))['amount__sum'] or 0
         sales_revenue = Sale.objects.aggregate(Sum('total_price'))['total_price__sum'] or 0
         total_in = investor_money + sales_revenue
@@ -34,31 +34,22 @@ class SystemConfig(models.Model):
         # 2. Total Pengeluaran (Belanja/Gaji)
         total_expense = Expense.objects.aggregate(Sum('amount'))['amount__sum'] or 0
         
-        # 3. Total Bagi Hasil (HANYA YANG BENAR-BENAR DITRANSFER)
-        # Kita jumlahkan jatah Landowner + Jatah Investor Real saja.
-        # Sisa dana (Retained Earnings) tidak kita hitung sebagai pengeluaran, jadi tetap di saldo.
-        dist_aggregates = ProfitDistribution.objects.aggregate(
-            real_lo=Sum('landowner_total_amount'),
-            real_inv=Sum('investor_total_amount')
-        )
-        
-        payout_landowner = dist_aggregates['real_lo'] or 0
-        payout_investor = dist_aggregates['real_inv'] or 0
-        
-        total_payout_real = payout_landowner + payout_investor
+        # 3. Total Bagi Hasil (REAL PAYOUT)
+        # Kita hitung jumlah detail item yang dibagikan ke investor/landowner
+        total_payout_real = ProfitDistributionItem.objects.aggregate(Sum('amount'))['amount__sum'] or 0
         
         # 4. Rumus Saldo Akhir
+        # Saldo = Masuk - (Keluar Belanja + Keluar Bagi Hasil)
+        # *Retained Earnings otomatis tersisa disini karena tidak dikurangi*
         saldo = total_in - total_expense - total_payout_real
         
-        return f"Rp {saldo:,.2f}"
+        return saldo # Return angka raw
 
     def shares_sold(self):
         from funding.models import Funding
-        sold = Funding.objects.filter(source_type='investor').aggregate(Sum('shares'))['shares__sum'] or 0
-        return f"{sold} Lembar"
+        return Funding.objects.filter(source_type='investor').aggregate(Sum('shares'))['shares__sum'] or 0
     
     def shares_available(self):
         from funding.models import Funding
         sold = Funding.objects.filter(source_type='investor').aggregate(Sum('shares'))['shares__sum'] or 0
-        sisa = self.total_system_shares - sold
-        return f"{sisa} Lembar"
+        return self.total_system_shares - sold
