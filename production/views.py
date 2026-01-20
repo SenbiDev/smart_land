@@ -2,74 +2,83 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+import traceback
+from django.db import transaction # PENTING untuk atomic transaction
 
 from .models import Production, Product
 from .serializers import ProductionSerializer, ProductSerializer
 from authentication.permissions import IsOperatorOrAdmin 
 
 # ==========================================
-# 1. MASTER PRODUK (GET & POST)
+# 1. MASTER PRODUK
 # ==========================================
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def list_create_products(request):
-    if request.method == 'GET':
-        search_query = request.query_params.get('search', None)
-        products = Product.objects.all().order_by('name')
-        
-        if search_query:
-            products = products.filter(name__icontains=search_query)
-            
-        serializer = ProductSerializer(products, many=True)
-        return Response(serializer.data)
+    try:
+        if request.method == 'GET':
+            search_query = request.query_params.get('search', None)
+            products = Product.objects.all().order_by('name')
+            if search_query:
+                products = products.filter(name__icontains=search_query)
+            serializer = ProductSerializer(products, many=True)
+            return Response(serializer.data)
 
-    elif request.method == 'POST':
-        serializer = ProductSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        elif request.method == 'POST':
+            serializer = ProductSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        print("ERROR PRODUCT:", str(e))
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ==========================================
-# 2. TRANSAKSI PRODUKSI (GET & POST)
+# 2. TRANSAKSI PRODUKSI
 # ==========================================
 @api_view(['GET', 'POST'])
 @permission_classes([IsOperatorOrAdmin])
 def list_create_productions(request):
-    if request.method == 'GET':
-        # select_related agar query join ke tabel asset dan product lebih efisien
-        queryset = Production.objects.select_related('asset', 'product').all().order_by('-date')
-        
-        # --- FILTERING LOGIC ---
-        asset_id = request.query_params.get('asset')
-        search = request.query_params.get('search')
-        status_param = request.query_params.get('status')
+    try:
+        if request.method == 'GET':
+            queryset = Production.objects.select_related('asset', 'product').all().order_by('-date')
+            
+            asset_id = request.query_params.get('asset')
+            search = request.query_params.get('search')
+            
+            if asset_id and asset_id != 'all':
+                queryset = queryset.filter(asset_id=asset_id)
+            if search:
+                queryset = queryset.filter(product__name__icontains=search)
 
-        if asset_id and asset_id != 'all':
-            queryset = queryset.filter(asset_id=asset_id)
-        
-        if status_param and status_param != 'all':
-            queryset = queryset.filter(status=status_param)
+            serializer = ProductionSerializer(queryset, many=True)
+            return Response(serializer.data)
 
-        if search:
-            queryset = queryset.filter(product__name__icontains=search)
-        # -----------------------
+        elif request.method == 'POST':
+            # Gunakan atomic transaction agar kalau stok gagal update, produksi juga batal
+            with transaction.atomic():
+                serializer = ProductionSerializer(data=request.data)
+                if serializer.is_valid():
+                    production = serializer.save()
+                    
+                    # [LOGIC STOK] Tambah Stok saat Create
+                    if production.status == 'stok':
+                        product = production.product
+                        product.current_stock += production.quantity
+                        product.save()
 
-        serializer = ProductionSerializer(queryset, many=True)
-        return Response(serializer.data)
+                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+                
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    elif request.method == 'POST':
-        # [SOLUSI ERROR 500 & 405]
-        # Menerima data JSON dari frontend (ID produk, ID asset, dll)
-        serializer = ProductionSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        # Jika data tidak valid, return error 400 (Bad Request) agar ketahuan salahnya dimana
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        print("CRITICAL ERROR PRODUKSI:", str(e))
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ==========================================
-# 3. DETAIL PRODUKSI (GET, PUT, PATCH, DELETE)
+# 3. DETAIL PRODUKSI
 # ==========================================
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsOperatorOrAdmin])
@@ -79,18 +88,43 @@ def production_detail(request, pk):
     except Production.DoesNotExist:
         return Response({'error': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    if request.method == 'GET':
-        serializer = ProductionSerializer(production)
-        return Response(serializer.data)
-
-    elif request.method in ['PUT', 'PATCH']:
-        partial = request.method == 'PATCH'
-        serializer = ProductionSerializer(production, data=request.data, partial=partial)
-        if serializer.is_valid():
-            serializer.save()
+    try:
+        if request.method == 'GET':
+            serializer = ProductionSerializer(production)
             return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    elif request.method == 'DELETE':
-        production.delete()
-        return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+        elif request.method in ['PUT', 'PATCH']:
+            with transaction.atomic():
+                old_qty = production.quantity
+                
+                partial = request.method == 'PATCH'
+                serializer = ProductionSerializer(production, data=request.data, partial=partial)
+                if serializer.is_valid():
+                    updated_prod = serializer.save()
+                    
+                    # [LOGIC STOK] Update selisih
+                    if updated_prod.status == 'stok':
+                        product = updated_prod.product
+                        diff = updated_prod.quantity - old_qty
+                        product.current_stock += diff
+                        product.save()
+
+                    return Response(serializer.data)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        elif request.method == 'DELETE':
+            with transaction.atomic():
+                # [LOGIC STOK] Kurangi Stok saat Hapus
+                if production.status == 'stok':
+                    product = production.product
+                    product.current_stock -= production.quantity
+                    # Mencegah stok minus (opsional, tergantung kebijakan)
+                    # if product.current_stock < 0: product.current_stock = 0 
+                    product.save()
+                
+                production.delete()
+                return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+            
+    except Exception as e:
+        print("ERROR DETAIL:", str(e))
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

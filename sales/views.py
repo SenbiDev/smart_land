@@ -1,51 +1,71 @@
-from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Sale
 from .serializers import SaleSerializer
-from authentication.permissions import IsAdminOrSuperadmin
-from rest_framework.permissions import IsAuthenticated
+from authentication.permissions import IsOperatorOrAdmin 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def list_sale(request):
-    queryset = Sale.objects.all()
-    serializer = SaleSerializer(queryset, many=True, context={'request': request})
-    return Response(serializer.data)
+@api_view(['GET', 'POST'])
+@permission_classes([IsOperatorOrAdmin])
+def list_create_sales(request):
+    if request.method == 'GET':
+        queryset = Sale.objects.select_related('product').all().order_by('-date')
+        
+        # Filter Pencarian
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(product__name__icontains=search) | queryset.filter(buyer_name__icontains=search)
 
-@api_view(['POST'])
-@permission_classes([IsAdminOrSuperadmin])
-@parser_classes([MultiPartParser, FormParser]) # Support Upload
-def create_sale(request):
-    serializer = SaleSerializer(data=request.data, context={'request': request})
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = SaleSerializer(queryset, many=True)
+        return Response(serializer.data)
 
-@api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin])
-@parser_classes([MultiPartParser, FormParser])
+    elif request.method == 'POST':
+        serializer = SaleSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                # Simpan data. 
+                # Model Sale.save() akan otomatis:
+                # 1. Validasi stok cukup
+                # 2. Hitung total harga
+                # 3. Kurangi stok produk
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except ValueError as e:
+                # Tangkap error validasi stok dari models.py
+                return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@permission_classes([IsOperatorOrAdmin])
 def sale_detail(request, pk):
     try:
         sale = Sale.objects.get(pk=pk)
     except Sale.DoesNotExist:
-        return Response({'error': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'detail': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = SaleSerializer(sale, context={'request': request})
+        serializer = SaleSerializer(sale)
         return Response(serializer.data)
 
-    elif request.method == 'PUT':
-        serializer = SaleSerializer(sale, data=request.data, context={'request': request})
+    elif request.method in ['PUT', 'PATCH']:
+        serializer = SaleSerializer(sale, data=request.data, partial=(request.method == 'PATCH'))
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     elif request.method == 'DELETE':
-        if sale.proof_image:
-            sale.proof_image.delete(save=False)
+        # Perhatian: Model Anda saat ini TIDAK memiliki logika pengembalian stok saat delete.
+        # Jika ingin stok kembali saat delete, Anda harus menambahkannya manual di sini 
+        # atau di method delete() model.
+        
+        # Contoh manual pengembalian stok sederhana:
+        product = sale.product
+        product.current_stock += sale.quantity
+        product.save()
+        
         sale.delete()
         return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)

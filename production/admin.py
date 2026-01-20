@@ -1,16 +1,18 @@
 from django.contrib import admin
 from .models import Production, Product
 
-# 1. Daftarkan Master Product (Agar bisa buat Stok Awal: Padi, Jagung, dll)
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('name', 'current_stock', 'unit')
+    list_display = ('name', 'unit', 'current_stock', 'updated_at')
     search_fields = ('name',)
 
-# 2. Perbaiki Production Admin
 @admin.register(Production)
 class ProductionAdmin(admin.ModelAdmin):
-    # [UBAH] Ganti 'product_name' & 'unit' jadi 'product'
-    list_display = ('product', 'asset', 'quantity', 'quality', 'date')
-    list_filter = ('quality', 'date', 'asset')
-    search_fields = ('product__name', 'asset__name') # Cari berdasarkan nama produk/aset
+    # [FIX] Sesuaikan list_display dengan field yang ada di models.py
+    # Hapus 'quality', ganti dengan 'quantity' dan 'unit_price'
+    list_display = ('product', 'asset', 'date', 'quantity', 'unit_price', 'status')
+    
+    # [FIX] list_filter juga harus field yang valid (biasanya status dan tanggal)
+    list_filter = ('status', 'date', 'asset')
+    
+    search_fields = ('product__name', 'asset__name')
