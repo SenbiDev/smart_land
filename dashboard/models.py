@@ -57,14 +57,6 @@ class SystemConfig(models.Model):
 
         saldo = (funding_in + sales_in) - (expense_out + dividend_out)
 
-        print(f"--- DEBUG CASH ON HAND ---")
-        print(f"Funding : {funding_in}")
-        print(f"Sales   : {sales_in}")
-        print(f"Expense : {expense_out}")
-        print(f"Yield   : {dividend_out}")
-        print(f"SALDO   : {saldo}")
-        print(f"--------------------------")
-
         return saldo
 
     def shares_sold(self):
