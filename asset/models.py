@@ -44,7 +44,7 @@ class Asset(models.Model):
     landowner_share_percentage = models.DecimalField(
         max_digits=5, 
         decimal_places=2, 
-        default=10.00,
+        default=0.00,
         verbose_name='% Bagi Hasil Pemilik'
     )
 

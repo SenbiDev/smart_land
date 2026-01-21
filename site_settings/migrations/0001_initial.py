@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
                 ('total_shares', models.PositiveIntegerField(default=10000, help_text='Total lembar saham yang diterbitkan perusahaan')),
                 ('share_price', models.DecimalField(decimal_places=2, default=1000000, help_text='Harga per lembar saham (Estimasi)', max_digits=15)),
                 ('max_share_per_investor', models.PositiveIntegerField(default=50, help_text='Maksimal persentase kepemilikan per investor (0-100)')),
-                ('company_name', models.CharField(default='PT Lahan Pintar', max_length=100)),
+                ('company_name', models.CharField(default='Integrated Estate', max_length=100)),
                 ('support_email', models.EmailField(default='admin@lahanpintar.com', max_length=254)),
                 ('enable_notifications', models.BooleanField(default=True)),
             ],

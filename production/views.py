@@ -1,12 +1,13 @@
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 import traceback
-from django.db import transaction # PENTING untuk atomic transaction
+from django.db import transaction
 
-from .models import Production, Product
-from .serializers import ProductionSerializer, ProductSerializer
+from .models import Production, Product, StockAdjustment
+from .serializers import ProductionSerializer, ProductSerializer, StockAdjustmentSerializer
 from authentication.permissions import IsOperatorOrAdmin 
 
 # ==========================================
@@ -57,7 +58,6 @@ def list_create_productions(request):
             return Response(serializer.data)
 
         elif request.method == 'POST':
-            # Gunakan atomic transaction agar kalau stok gagal update, produksi juga batal
             with transaction.atomic():
                 serializer = ProductionSerializer(data=request.data)
                 if serializer.is_valid():
@@ -118,8 +118,6 @@ def production_detail(request, pk):
                 if production.status == 'stok':
                     product = production.product
                     product.current_stock -= production.quantity
-                    # Mencegah stok minus (opsional, tergantung kebijakan)
-                    # if product.current_stock < 0: product.current_stock = 0 
                     product.save()
                 
                 production.delete()
@@ -127,4 +125,86 @@ def production_detail(request, pk):
             
     except Exception as e:
         print("ERROR DETAIL:", str(e))
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ==========================================
+# 4. STOCK ADJUSTMENT (BARU)
+# ==========================================
+@api_view(['GET', 'POST'])
+@permission_classes([IsOperatorOrAdmin])
+@parser_classes([MultiPartParser, FormParser])
+def list_create_adjustments(request):
+    try:
+        if request.method == 'GET':
+            queryset = StockAdjustment.objects.select_related('product', 'created_by').all().order_by('-date', '-created_at')
+            
+            # Filter berdasarkan produk
+            product_id = request.query_params.get('product')
+            if product_id:
+                queryset = queryset.filter(product_id=product_id)
+            
+            # Filter berdasarkan tipe adjustment
+            adjustment_type = request.query_params.get('type')
+            if adjustment_type and adjustment_type != 'all':
+                queryset = queryset.filter(adjustment_type=adjustment_type)
+
+            serializer = StockAdjustmentSerializer(queryset, many=True, context={'request': request})
+            return Response(serializer.data)
+
+        elif request.method == 'POST':
+            with transaction.atomic():
+                serializer = StockAdjustmentSerializer(data=request.data, context={'request': request})
+                if serializer.is_valid():
+                    # Set user yang membuat adjustment
+                    adjustment = serializer.save(created_by=request.user)
+                    
+                    return Response(
+                        StockAdjustmentSerializer(adjustment, context={'request': request}).data,
+                        status=status.HTTP_201_CREATED
+                    )
+                
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception as e:
+        print("ERROR ADJUSTMENT:", str(e))
+        traceback.print_exc()
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsOperatorOrAdmin])
+def adjustment_detail(request, pk):
+    try:
+        adjustment = StockAdjustment.objects.get(pk=pk)
+    except StockAdjustment.DoesNotExist:
+        return Response({'error': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        if request.method == 'GET':
+            serializer = StockAdjustmentSerializer(adjustment, context={'request': request})
+            return Response(serializer.data)
+
+        elif request.method == 'DELETE':
+            # Kembalikan stok sebelum delete (reverse operation)
+            with transaction.atomic():
+                product = adjustment.product
+                
+                # Reverse logic
+                if adjustment.adjustment_type == 'addition':
+                    product.current_stock -= adjustment.quantity  # Balik pengurangan
+                else:  # reduction
+                    product.current_stock += adjustment.quantity  # Balik penambahan
+                
+                product.save()
+                adjustment.delete()
+                
+                return Response(
+                    {'message': 'Adjustment deleted, stock restored'}, 
+                    status=status.HTTP_204_NO_CONTENT
+                )
+            
+    except Exception as e:
+        print("ERROR DETAIL ADJUSTMENT:", str(e))
+        traceback.print_exc()
         return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

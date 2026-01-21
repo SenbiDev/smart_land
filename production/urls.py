@@ -10,4 +10,10 @@ urlpatterns = [
 
     # API Detail (Update & Delete)
     path('productions/<int:pk>/', views.production_detail, name='detail-production'),
+    
+    # ==========================================
+    # API STOCK ADJUSTMENT (BARU)
+    # ==========================================
+    path('adjustments/', views.list_create_adjustments, name='list-create-adjustments'),
+    path('adjustments/<int:pk>/', views.adjustment_detail, name='detail-adjustment'),
 ]

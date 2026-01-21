@@ -7,7 +7,7 @@ class SiteSetting(models.Model):
     max_share_per_investor = models.PositiveIntegerField(default=50, help_text="Maksimal persentase kepemilikan per investor (0-100)")
 
     # Profil Perusahaan
-    company_name = models.CharField(max_length=100, default="PT Lahan Pintar")
+    company_name = models.CharField(max_length=100, default="Integrated Estate")
     support_email = models.EmailField(default="admin@lahanpintar.com")
     
     # System Prefs

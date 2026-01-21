@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Production, Product
+from .models import Production, Product, StockAdjustment
 
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:
@@ -29,7 +29,6 @@ class ProductionSerializer(serializers.ModelSerializer):
             "id": obj.product.id,
             "name": obj.product.name,
             "unit": obj.product.unit,
-            # [FIX] Tambahkan ini agar Stok Gudang di Frontend tidak 0
             "current_stock": obj.product.current_stock 
         }
 
@@ -41,3 +40,42 @@ class ProductionSerializer(serializers.ModelSerializer):
             "name": obj.asset.name,
             "type": getattr(obj.asset, 'type', 'Unknown') 
         }
+
+
+# ==========================================
+# SERIALIZER BARU: STOCK ADJUSTMENT
+# ==========================================
+class StockAdjustmentSerializer(serializers.ModelSerializer):
+    product_details = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    proof_image = serializers.ImageField(max_length=None, use_url=True, allow_null=True, required=False)
+    
+    # Tambahan untuk display text yang lebih user-friendly
+    adjustment_type_display = serializers.CharField(source='get_adjustment_type_display', read_only=True)
+    reason_display = serializers.CharField(source='get_reason_display', read_only=True)
+
+    class Meta:
+        model = StockAdjustment
+        fields = [
+            'id', 'product', 'product_details', 
+            'adjustment_type', 'adjustment_type_display',
+            'quantity', 'reason', 'reason_display',
+            'notes', 'date', 'proof_image', 
+            'created_by', 'created_by_name', 'created_at'
+        ]
+        read_only_fields = ['created_by', 'created_at']
+
+    def get_product_details(self, obj):
+        if not obj.product:
+            return None
+        return {
+            "id": obj.product.id,
+            "name": obj.product.name,
+            "unit": obj.product.unit,
+            "current_stock": obj.product.current_stock
+        }
+    
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return obj.created_by.username
+        return "System"
