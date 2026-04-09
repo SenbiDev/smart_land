@@ -23,6 +23,9 @@ SECRET_KEY = 'django-insecure-*h_(c9)yydu8u7lsp)9d#z!p*5j6b%6m)4)y2$b%-pfcpp5lz6
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+# ========== SSO SETTINGS ==========
+SSO_ARNATECH_BASE_URL = 'https://sso.arnatech.id'
+
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 AUTH_USER_MODEL = 'authentication.CustomUser'

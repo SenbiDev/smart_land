@@ -10,13 +10,13 @@ from .serializers import ProfitDistributionSerializer
 from asset.models import Asset
 from funding.models import Funding
 from dashboard.models import SystemConfig
-from authentication.permissions import IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
+from authentication.permissions import HasSSOPermission
 
 # ==========================================
 # 1. LIST & CREATE (GET, POST)
 # ==========================================
 @api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
+@permission_classes([HasSSOPermission('profit_distribution')])
 def list_create_distributions(request):
     if request.method == 'GET':
         queryset = ProfitDistribution.objects.prefetch_related('items').all().order_by('-date')
@@ -24,9 +24,6 @@ def list_create_distributions(request):
         return Response(serializer.data)
 
     elif request.method == 'POST':
-        user_role = getattr(request.user.role, 'name', '') if request.user.role else ''
-        if user_role not in ['Admin', 'Superadmin', 'Operator']:
-             return Response({'detail': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
         data = request.data
         
@@ -133,7 +130,7 @@ def list_create_distributions(request):
 # 2. PREVIEW (POST)
 # ==========================================
 @api_view(['POST'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([HasSSOPermission('profit_distribution')])
 def preview_distribution(request):
     try:
         raw_amount = request.data.get('total_distributed') or request.data.get('total_amount') or 0
@@ -199,7 +196,7 @@ def preview_distribution(request):
 # 3. DETAIL & DELETE
 # ==========================================
 @api_view(['GET', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
+@permission_classes([HasSSOPermission('profit_distribution')])
 def distribution_detail(request, pk):
     try:
         dist = ProfitDistribution.objects.prefetch_related('items').get(pk=pk)
@@ -211,7 +208,5 @@ def distribution_detail(request, pk):
         return Response(serializer.data)
 
     elif request.method == 'DELETE':
-        if not (request.user.role and request.user.role.name in ['Admin', 'Superadmin']):
-             return Response({'detail': 'Permission denied'}, status=403)
         dist.delete()
         return Response(status=204)

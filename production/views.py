@@ -8,7 +8,7 @@ from django.db import transaction
 
 from .models import Production, Product, StockAdjustment
 from .serializers import ProductionSerializer, ProductSerializer, StockAdjustmentSerializer
-from authentication.permissions import IsOperatorOrAdmin 
+from authentication.permissions import HasSSOPermission 
 
 # ==========================================
 # 1. MASTER PRODUK
@@ -40,7 +40,7 @@ def list_create_products(request):
 # 2. TRANSAKSI PRODUKSI
 # ==========================================
 @api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([HasSSOPermission('production')])
 def list_create_productions(request):
     try:
         if request.method == 'GET':
@@ -81,7 +81,7 @@ def list_create_productions(request):
 # 3. DETAIL PRODUKSI
 # ==========================================
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([HasSSOPermission('production')])
 def production_detail(request, pk):
     try:
         production = Production.objects.get(pk=pk)
@@ -132,7 +132,7 @@ def production_detail(request, pk):
 # 4. STOCK ADJUSTMENT (BARU)
 # ==========================================
 @api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([HasSSOPermission('production')])
 @parser_classes([MultiPartParser, FormParser])
 def list_create_adjustments(request):
     try:
@@ -173,7 +173,7 @@ def list_create_adjustments(request):
 
 
 @api_view(['GET', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([HasSSOPermission('production')])
 def adjustment_detail(request, pk):
     try:
         adjustment = StockAdjustment.objects.get(pk=pk)

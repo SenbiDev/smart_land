@@ -4,11 +4,11 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Funding
 from .serializers import FundingSerializer
-from authentication.permissions import IsAdminOrSuperadmin
+from authentication.permissions import HasSSOPermission
 from rest_framework.permissions import IsAuthenticated
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([HasSSOPermission('funding')])
 def list_funding(request):
     # Filter opsional: ?type=investor
     source_type = request.query_params.get('type')
@@ -25,7 +25,7 @@ def list_funding(request):
     return Response(serializer.data)
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([HasSSOPermission('funding')])
 @parser_classes([MultiPartParser, FormParser]) # Support Upload
 def create_funding(request):
     serializer = FundingSerializer(data=request.data, context={'request': request})
@@ -35,7 +35,7 @@ def create_funding(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAdminOrSuperadmin])
+@permission_classes([HasSSOPermission('funding')])
 @parser_classes([MultiPartParser, FormParser])
 def funding_detail(request, pk):
     try:

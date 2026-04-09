@@ -5,10 +5,10 @@ from django.db.models import Q
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Expense
 from .serializers import ExpenseCreateUpdateSerializer, ExpenseDetailSerializer
-from authentication.permissions import IsOperatorOrAdmin, IsViewerOrInvestorReadOnly
+from authentication.permissions import HasSSOPermission
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
+@permission_classes([HasSSOPermission('expense')])
 @parser_classes([MultiPartParser, FormParser]) # Tambahkan ini agar bisa upload gambar
 def list_expense(request):
     if request.method == 'GET':
@@ -41,7 +41,7 @@ def list_expense(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin | IsViewerOrInvestorReadOnly])
+@permission_classes([HasSSOPermission('expense')])
 @parser_classes([MultiPartParser, FormParser])
 def expense_detail(request, pk):
     try:

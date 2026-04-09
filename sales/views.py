@@ -3,10 +3,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Sale
 from .serializers import SaleSerializer
-from authentication.permissions import IsOperatorOrAdmin 
+from authentication.permissions import HasSSOPermission 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([HasSSOPermission('sales')])
 def list_create_sales(request):
     if request.method == 'GET':
         queryset = Sale.objects.select_related('product').all().order_by('-date')
@@ -39,7 +39,7 @@ def list_create_sales(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@permission_classes([IsOperatorOrAdmin])
+@permission_classes([HasSSOPermission('sales')])
 def sale_detail(request, pk):
     try:
         sale = Sale.objects.get(pk=pk)
