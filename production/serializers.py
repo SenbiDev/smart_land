@@ -1,42 +1,81 @@
 from rest_framework import serializers
-from .models import Production
+from .models import Production, Product, StockAdjustment
 
-class ProductionCreateUpdateSerializer(serializers.ModelSerializer):
-    """
-    Serializer sederhana untuk Create dan Update.
-    Hanya menerima input, validasi di views.
-    """
+class ProductSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Production
-        # Sertakan field status yang baru
-        fields = [
-            'name', 'asset', 'date', 'quantity', 'unit', 'unit_price', 'status'
-        ]
-        read_only_fields = ['total_value'] # total_value dihitung di view
+        model = Product
+        fields = '__all__'
 
-class ProductionDetailSerializer(serializers.ModelSerializer):
-    """
-    Serializer "Pintar" untuk GET (Read).
-    Menambahkan data dari relasi (Asset).
-    """
-    # --- TAMBAHAN BARU ---
-    asset_name = serializers.CharField(source='asset.name', read_only=True)
-    asset_type = serializers.CharField(source='asset.type', read_only=True)
-    # ---------------------
+class ProductionSerializer(serializers.ModelSerializer):
+    product_details = serializers.SerializerMethodField()
+    asset_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Production
         fields = [
-            'id',
-            'name',
-            'asset',
-            'asset_name',  # Baru
-            'asset_type',  # Baru
-            'date',
-            'quantity',
-            'unit',
-            'unit_price',
-            'total_value',
-            'created_at',
-            'status',      # Baru
+            'id', 
+            'asset', 'asset_details', 
+            'product', 'product_details', 
+            'quantity', 
+            'unit_price', 
+            'date', 'status', 
+            'created_at', 'updated_at'
         ]
+
+    def get_product_details(self, obj):
+        if not obj.product:
+            return None
+        return {
+            "id": obj.product.id,
+            "name": obj.product.name,
+            "unit": obj.product.unit,
+            "current_stock": obj.product.current_stock 
+        }
+
+    def get_asset_details(self, obj):
+        if not obj.asset:
+            return None
+        return {
+            "id": obj.asset.id,
+            "name": obj.asset.name,
+            "type": getattr(obj.asset, 'type', 'Unknown') 
+        }
+
+
+# ==========================================
+# SERIALIZER BARU: STOCK ADJUSTMENT
+# ==========================================
+class StockAdjustmentSerializer(serializers.ModelSerializer):
+    product_details = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    proof_image = serializers.ImageField(max_length=None, use_url=True, allow_null=True, required=False)
+    
+    # Tambahan untuk display text yang lebih user-friendly
+    adjustment_type_display = serializers.CharField(source='get_adjustment_type_display', read_only=True)
+    reason_display = serializers.CharField(source='get_reason_display', read_only=True)
+
+    class Meta:
+        model = StockAdjustment
+        fields = [
+            'id', 'product', 'product_details', 
+            'adjustment_type', 'adjustment_type_display',
+            'quantity', 'reason', 'reason_display',
+            'notes', 'date', 'proof_image', 
+            'created_by', 'created_by_name', 'created_at'
+        ]
+        read_only_fields = ['created_by', 'created_at']
+
+    def get_product_details(self, obj):
+        if not obj.product:
+            return None
+        return {
+            "id": obj.product.id,
+            "name": obj.product.name,
+            "unit": obj.product.unit,
+            "current_stock": obj.product.current_stock
+        }
+    
+    def get_created_by_name(self, obj):
+        if obj.created_by:
+            return obj.created_by.username
+        return "System"

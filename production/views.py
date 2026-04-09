@@ -1,183 +1,210 @@
-from decimal import Decimal
-from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.response import Response
-from rest_framework import status, permissions
-from django.shortcuts import get_object_or_404
-from .models import Production
-from .serializers import ProductionCreateUpdateSerializer, ProductionDetailSerializer
-from asset.models import Asset
-from ownership.models import Ownership
-from investor.models import Investor
-from profit_distribution.models import ProfitDistribution
-from distribution_detail.models import DistributionDetail
-from authentication.permissions import IsAdminOrSuperadmin, IsOperatorOrAdmin
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
+import traceback
+from django.db import transaction
 
+from .models import Production, Product, StockAdjustment
+from .serializers import ProductionSerializer, ProductSerializer, StockAdjustmentSerializer
+from authentication.permissions import IsOperatorOrAdmin 
+
+# ==========================================
+# 1. MASTER PRODUK
+# ==========================================
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def list_create_products(request):
+    try:
+        if request.method == 'GET':
+            search_query = request.query_params.get('search', None)
+            products = Product.objects.all().order_by('name')
+            if search_query:
+                products = products.filter(name__icontains=search_query)
+            serializer = ProductSerializer(products, many=True)
+            return Response(serializer.data)
+
+        elif request.method == 'POST':
+            serializer = ProductSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        print("ERROR PRODUCT:", str(e))
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ==========================================
+# 2. TRANSAKSI PRODUKSI
+# ==========================================
 @api_view(['GET', 'POST'])
 @permission_classes([IsOperatorOrAdmin])
-def production_list(request):
-    
-    if request.method == 'GET':
-        # --- LOGIKA GET BARU (DENGAN FILTER) ---
-        queryset = Production.objects.select_related('asset').all().order_by('-date')
-        
-        # 1. Filter Global: Asset
-        asset_id = request.query_params.get('asset')
-        if asset_id and asset_id != 'all':
-            queryset = queryset.filter(asset_id=asset_id)
+def list_create_productions(request):
+    try:
+        if request.method == 'GET':
+            queryset = Production.objects.select_related('asset', 'product').all().order_by('-date')
             
-        # 2. Filter Bar: Search (by name)
-        search = request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(name__icontains=search)
+            asset_id = request.query_params.get('asset')
+            search = request.query_params.get('search')
             
-        # 3. Filter Bar: Tipe (dari asset)
-        type_filter = request.query_params.get('type')
-        if type_filter and type_filter != 'all':
-            queryset = queryset.filter(asset__type=type_filter)
-            
-        # 4. Filter Bar: Status
-        status_filter = request.query_params.get('status')
-        if status_filter and status_filter != 'all':
-            queryset = queryset.filter(status=status_filter)
-            
-        serializer = ProductionDetailSerializer(queryset, many=True)
-        return Response(serializer.data)
-        # --- AKHIR LOGIKA GET BARU ---
+            if asset_id and asset_id != 'all':
+                queryset = queryset.filter(asset_id=asset_id)
+            if search:
+                queryset = queryset.filter(product__name__icontains=search)
 
-    elif request.method == 'POST':
-        # Gunakan serializer Create/Update
-        serializer = ProductionCreateUpdateSerializer(data=request.data)
-        if serializer.is_valid():
-            quantity = serializer.validated_data['quantity']
-            unit_price = serializer.validated_data['unit_price']
-            total_value = Decimal(str(quantity)) * unit_price
+            serializer = ProductionSerializer(queryset, many=True)
+            return Response(serializer.data)
 
-            # Simpan data utama (termasuk status)
-            production = serializer.save(total_value=total_value)
-            
-            # Logika profit distribution (tetap sama)
-            asset = production.asset
-            net_profit = total_value
+        elif request.method == 'POST':
+            with transaction.atomic():
+                serializer = ProductionSerializer(data=request.data)
+                if serializer.is_valid():
+                    production = serializer.save()
+                    
+                    # [LOGIC STOK] Tambah Stok saat Create
+                    if production.status == 'stok':
+                        product = production.product
+                        product.current_stock += production.quantity
+                        product.save()
 
-            owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
-            owner_share = net_profit * owner_share_percent_decimal
-            
-            investor_share_total = net_profit - owner_share
+                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+                
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            ownerships = Ownership.objects.filter(asset=asset)
-            total_units = sum(o.units for o in ownerships) or 1  
+    except Exception as e:
+        print("CRITICAL ERROR PRODUKSI:", str(e))
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            distribution, created = ProfitDistribution.objects.update_or_create(
-                production=production,
-                defaults={
-                    'period': str(production.date),
-                    'net_profit': net_profit,
-                    'landowner_share': owner_share,
-                    'investor_share': investor_share_total,
-                    'distribution_date': timezone.now().date()
-                }
-            )
-
-            if not created:
-                distribution.details.all().delete()
-
-            investor_distributions = []
-            for o in ownerships:
-                percent = o.units / total_units
-                share = investor_share_total * Decimal(str(percent))
-                DistributionDetail.objects.create(
-                    distribution=distribution,
-                    investor=o.investor,
-                    ownership_percentage=round(percent * 100, 2),
-                    amount_received=share
-                )
-                investor_distributions.append({
-                    'investor': o.investor.user.username,
-                    'percentage': round(percent * 100, 2),
-                    'share': str(share)
-                })
-            
-            # Kembalikan data lengkap menggunakan DetailSerializer
-            return_data = ProductionDetailSerializer(production).data
-            return Response(return_data, status=status.HTTP_201_CREATED)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
+# ==========================================
+# 3. DETAIL PRODUKSI
+# ==========================================
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsOperatorOrAdmin])
 def production_detail(request, pk):
-    production = get_object_or_404(Production, pk=pk)
+    try:
+        production = Production.objects.get(pk=pk)
+    except Production.DoesNotExist:
+        return Response({'error': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    if request.method == 'GET':
-        # Gunakan DetailSerializer untuk GET
-        serializer = ProductionDetailSerializer(production)
-        return Response(serializer.data)
+    try:
+        if request.method == 'GET':
+            serializer = ProductionSerializer(production)
+            return Response(serializer.data)
 
-    is_admin = request.user.role == 'Admin' or request.user.role == 'Superadmin'
+        elif request.method in ['PUT', 'PATCH']:
+            with transaction.atomic():
+                old_qty = production.quantity
+                
+                partial = request.method == 'PATCH'
+                serializer = ProductionSerializer(production, data=request.data, partial=partial)
+                if serializer.is_valid():
+                    updated_prod = serializer.save()
+                    
+                    # [LOGIC STOK] Update selisih
+                    if updated_prod.status == 'stok':
+                        product = updated_prod.product
+                        diff = updated_prod.quantity - old_qty
+                        product.current_stock += diff
+                        product.save()
 
-    if request.method in ['PUT', 'PATCH']:
-        if not is_admin:
-            return Response({'error': 'Hanya Admin yang dapat mengubah data.'}, status=status.HTTP_403_FORBIDDEN)
-        
-        data = request.data.copy()
-        
-        # Ambil nilai yang ada jika tidak di-supply
-        quantity = float(data.get('quantity', production.quantity))
-        unit_price = Decimal(data.get('unit_price', production.unit_price))
-        total_value = Decimal(str(quantity)) * unit_price
+                    return Response(serializer.data)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Gunakan CreateUpdateSerializer untuk update
-        serializer = ProductionCreateUpdateSerializer(production, data=data, partial=(request.method == 'PATCH'))
-        if serializer.is_valid():
-            production = serializer.save(total_value=total_value)
+        elif request.method == 'DELETE':
+            with transaction.atomic():
+                # [LOGIC STOK] Kurangi Stok saat Hapus
+                if production.status == 'stok':
+                    product = production.product
+                    product.current_stock -= production.quantity
+                    product.save()
+                
+                production.delete()
+                return Response({'message': 'Deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
             
-            # Logika profit distribution (tetap sama)
-            asset = production.asset
-            net_profit = total_value
+    except Exception as e:
+        print("ERROR DETAIL:", str(e))
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            owner_share_percent_decimal = asset.landowner_share_percentage / Decimal("100.0")
-            owner_share = net_profit * owner_share_percent_decimal
+
+# ==========================================
+# 4. STOCK ADJUSTMENT (BARU)
+# ==========================================
+@api_view(['GET', 'POST'])
+@permission_classes([IsOperatorOrAdmin])
+@parser_classes([MultiPartParser, FormParser])
+def list_create_adjustments(request):
+    try:
+        if request.method == 'GET':
+            queryset = StockAdjustment.objects.select_related('product', 'created_by').all().order_by('-date', '-created_at')
             
-            investor_share_total = net_profit - owner_share
+            # Filter berdasarkan produk
+            product_id = request.query_params.get('product')
+            if product_id:
+                queryset = queryset.filter(product_id=product_id)
+            
+            # Filter berdasarkan tipe adjustment
+            adjustment_type = request.query_params.get('type')
+            if adjustment_type and adjustment_type != 'all':
+                queryset = queryset.filter(adjustment_type=adjustment_type)
 
-            ownerships = Ownership.objects.filter(asset=asset)
-            total_units = sum(o.units for o in ownerships) or 1
+            serializer = StockAdjustmentSerializer(queryset, many=True, context={'request': request})
+            return Response(serializer.data)
 
-            distribution, created = ProfitDistribution.objects.update_or_create(
-                production=production,
-                defaults={
-                    'period': str(production.date),
-                    'net_profit': net_profit,
-                    'landowner_share': owner_share,
-                    'investor_share': investor_share_total,
-                    'distribution_date': timezone.now().date()
-                }
-            )
+        elif request.method == 'POST':
+            with transaction.atomic():
+                serializer = StockAdjustmentSerializer(data=request.data, context={'request': request})
+                if serializer.is_valid():
+                    # Set user yang membuat adjustment
+                    adjustment = serializer.save(created_by=request.user)
+                    
+                    return Response(
+                        StockAdjustmentSerializer(adjustment, context={'request': request}).data,
+                        status=status.HTTP_201_CREATED
+                    )
+                
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            if not created:
-                distribution.details.all().delete()
+    except Exception as e:
+        print("ERROR ADJUSTMENT:", str(e))
+        traceback.print_exc()
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            for o in ownerships:
-                percent = o.units / total_units
-                share = investor_share_total * Decimal(str(percent))
-                DistributionDetail.objects.create(
-                    distribution=distribution,
-                    investor=o.investor,
-                    ownership_percentage=round(percent * 100, 2),
-                    amount_received=share
+
+@api_view(['GET', 'DELETE'])
+@permission_classes([IsOperatorOrAdmin])
+def adjustment_detail(request, pk):
+    try:
+        adjustment = StockAdjustment.objects.get(pk=pk)
+    except StockAdjustment.DoesNotExist:
+        return Response({'error': 'Data not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        if request.method == 'GET':
+            serializer = StockAdjustmentSerializer(adjustment, context={'request': request})
+            return Response(serializer.data)
+
+        elif request.method == 'DELETE':
+            # Kembalikan stok sebelum delete (reverse operation)
+            with transaction.atomic():
+                product = adjustment.product
+                
+                # Reverse logic
+                if adjustment.adjustment_type == 'addition':
+                    product.current_stock -= adjustment.quantity  # Balik pengurangan
+                else:  # reduction
+                    product.current_stock += adjustment.quantity  # Balik penambahan
+                
+                product.save()
+                adjustment.delete()
+                
+                return Response(
+                    {'message': 'Adjustment deleted, stock restored'}, 
+                    status=status.HTTP_204_NO_CONTENT
                 )
-
-            # Kembalikan data lengkap menggunakan DetailSerializer
-            return_data = ProductionDetailSerializer(production).data
-            return Response(return_data)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    elif request.method == 'DELETE':
-        if not is_admin:
-            return Response({'error': 'Hanya Admin yang dapat menghapus data.'}, status=status.HTTP_403_FORBIDDEN)
-        
-        production.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+            
+    except Exception as e:
+        print("ERROR DETAIL ADJUSTMENT:", str(e))
+        traceback.print_exc()
+        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

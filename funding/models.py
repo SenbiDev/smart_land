@@ -1,22 +1,43 @@
 from django.db import models
-from funding_source.models import FundingSource
-from project.models import Project
+from django.utils import timezone
 
-# Create your models here.
 class Funding(models.Model):
-    STATUS_CHOICES = [
-        ('available', 'Tersedia'),
-        ('allocated', 'Teralokasi'),
-        ('used', 'Terpakai'),
+    # [UBAH] Hanya 2 Pilihan sesuai request
+    SOURCE_TYPES = [
+        ('investor', 'Investor'),
+        ('donation', 'Donasi'),
     ]
 
-    source = models.ForeignKey(FundingSource, on_delete=models.CASCADE, related_name='fundings')
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
-    date_received = models.DateField()
-    purpose = models.TextField()
-    status = models.CharField(max_length=50, choices=STATUS_CHOICES)
+    PAYMENT_METHODS = [
+        ('transfer', 'Transfer Bank'),
+        ('cash', 'Tunai'),
+        ('qris', 'QRIS/E-Wallet'),
+    ]
+
+    # Identitas Pemberi Dana
+    source_name = models.CharField(max_length=255, verbose_name="Nama Investor/Donatur")
+    contact_info = models.CharField(max_length=100, null=True, blank=True, verbose_name="Kontak (HP/Email)")
+    
+    # Detail Dana
+    source_type = models.CharField(max_length=20, choices=SOURCE_TYPES, default='investor', verbose_name="Tipe Dana")
+    amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Jumlah Dana (Rp)")
+    
+    # [PENTING] null=True, blank=True artinya "Boleh Kosong" (untuk Donasi)
+    shares = models.PositiveIntegerField(null=True, blank=True, verbose_name="Lembar Saham", help_text="Wajib diisi jika Investor")
+    
+    date_received = models.DateField(default=timezone.now, verbose_name="Tanggal Diterima")
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='transfer', verbose_name="Metode Pembayaran")
+    
+    proof_image = models.ImageField(upload_to='funding/proofs/', null=True, blank=True, verbose_name="Bukti Transfer")
+    notes = models.TextField(null=True, blank=True, verbose_name="Catatan")
+
     created_at = models.DateTimeField(auto_now_add=True)
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='fundings')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date_received']
+        verbose_name = 'Pendanaan'
+        verbose_name_plural = 'Daftar Pendanaan'
 
     def __str__(self):
-        return f"{self.source.name} - {self.amount}"
+        return f"{self.source_name} - {self.get_source_type_display()}"

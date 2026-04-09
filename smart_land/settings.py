@@ -39,19 +39,16 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'corsheaders',
+    'django_filters', 
     'authentication',
-    'investor',
     'asset',
-    'funding_source',
     'funding',
-    'ownership',
-    'project',
-    'production',
-    'profit_distribution',
-    'distribution_detail',
     'expense',
-    'reporting',
+    'production',
+    'sales',                
+    'profit_distribution',
     'dashboard',
+    'site_settings',
 ]
 
 REST_FRAMEWORK = {
@@ -146,6 +143,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:8000",  
+    "http://127.0.0.1:8000",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

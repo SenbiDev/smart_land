@@ -22,16 +22,16 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('authentication.urls')),
-    path('api/investor/', include('investor.urls')),
     path('api/asset/', include('asset.urls')),
-    path('api/fundingsource/', include('funding_source.urls')),
-    path('api/funding/', include('funding.urls')),
-    path('api/ownership/', include('ownership.urls')),
-    path('api/production/', include('production.urls')),
-    path('api/profit-distribution/', include('profit_distribution.urls')),
-    path('api/project/', include('project.urls')),
-    path('api/expense/', include('expense.urls')),
-    path('api/distributiondetail/', include('distribution_detail.urls')),
-    path('api/reporting/', include('reporting.urls')),
+    path('api/funding/', include('funding.urls')),       # Sudah gabungan Investor & Donasi
+    path('api/expense/', include('expense.urls')),       # Global Expense
+    path('api/production/', include('production.urls')), # Stok Fisik
+    path('api/sales/', include('sales.urls')),           # Penjualan (Revenue) - App Baru
+    path('api/profit-distribution/', include('profit_distribution.urls')), # Bagi Hasil Global
     path('api/dashboard/', include('dashboard.urls')),
+    path('api/settings/', include('site_settings.urls')),
 ]
+
+# Tambahan untuk melayani file media (Gambar Upload) saat Development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

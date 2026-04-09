@@ -1,40 +1,23 @@
 from rest_framework import serializers
 from .models import Funding
-from decimal import Decimal 
 
-# Serializer sederhana untuk CREATE dan UPDATE
-class FundingCreateUpdateSerializer(serializers.ModelSerializer):
+class FundingSerializer(serializers.ModelSerializer):
+    proof_image = serializers.ImageField(max_length=None, use_url=True, allow_null=True, required=False)
+
     class Meta:
         model = Funding
         fields = '__all__'
 
-# Serializer "Pintar" untuk GET (Read)
-class FundingDetailSerializer(serializers.ModelSerializer):
-    # 1. Menambahkan nama dari relasi (sesuai ERD)
-    source_name = serializers.CharField(source='source.name', read_only=True)
-    source_type = serializers.CharField(source='source.type', read_only=True)
-    project_name = serializers.CharField(source='project.name', read_only=True)
+    # [LOGIKA TAMBAHAN] Sesuai request atasan
+    def validate(self, data):
+        # Cek apa yang dipilih user
+        tipe = data.get('source_type')
+        saham = data.get('shares')
 
-    # 2. Menambahkan field kalkulasi (dari views.py)
-    total_terpakai = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
-    sisa_dana = serializers.DecimalField(max_digits=15, decimal_places=2, read_only=True)
-    persen_terpakai = serializers.FloatField(read_only=True)
-
-    class Meta:
-        model = Funding
-        fields = [
-            'id',
-            'amount',
-            'date_received',
-            'purpose',
-            'status',
-            'created_at',
-            'project',
-            'project_name', 
-            'source',
-            'source_name',  
-            'source_type', 
-            'total_terpakai', 
-            'sisa_dana',      
-            'persen_terpakai'
-        ]
+        # Kalau Investor, WAJIB punya saham
+        if tipe == 'investor' and not saham:
+            raise serializers.ValidationError({
+                "shares": "Untuk tipe Investor, jumlah lembar saham wajib diisi."
+            })
+        
+        return data
