@@ -9,9 +9,15 @@ urlpatterns = [
     path('verify-email/', views.verify_email_view, name='verify-email'),
     path('resend-email-otp/', views.resend_email_otp_view, name='resend-email-otp'),
     path('logout/', views.logout_view, name='logout'),
-    path('refresh/', views.refresh_view, name='refresh'),
+    path('token/refresh/', views.refresh_view, name='token_refresh'),
     
-    # Endpoint Role (PENTING untuk User Management Frontend)
+    # MFA Endpoints
+    path('mfa/verify/', views.verify_mfa_login_view, name='mfa-verify'),
+    path('mfa/status/', views.mfa_status_view, name='mfa-status'),
+    path('mfa/set/', views.mfa_setup_view, name='mfa-set'),
+    path('mfa/disable/', views.mfa_disable_view, name='mfa-disable'),
+    
+    # --- Role Management ---
     path('roles/', views.role_list, name='role-list'), 
 
     # User Management (Superadmin)
