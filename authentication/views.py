@@ -61,7 +61,7 @@ except FileNotFoundError:
     print("[WARNING] SSO public.pem tidak ditemukan. JWT decode akan gagal.")
 
 
-def decode_sso_jwt(sso_token):
+def decode_sso_jwt(sso_token, refresh_token):
     """
     Decode SSO JWT (RS256) untuk mengekstrak roles, permissions, is_owner, org_id, org_name.
     Strategi: Coba verified decode dulu, fallback ke unverified jika public key gagal.
@@ -109,6 +109,8 @@ def decode_sso_jwt(sso_token):
         'is_owner': result.get('is_owner', False),
         'org_id': result.get('org_id'),
         'org_name': result.get('org_name'),
+        'access': sso_token,
+        'refresh': refresh_token,
     }
 
 
@@ -129,6 +131,9 @@ def build_user_data(user, role_name, sso_claims=None):
         data['is_owner'] = sso_claims.get('is_owner', False)
         data['org_id'] = sso_claims.get('org_id')
         data['org_name'] = sso_claims.get('org_name')
+        data['access'] = sso_claims.get('access')
+        data['refresh'] = sso_claims.get('refresh')
+
         # Jika ada roles dari JWT, gunakan role pertama
         jwt_roles = sso_claims.get('roles', [])
         if jwt_roles and not role_name:
@@ -192,11 +197,12 @@ def google_login_sso(request):
             
         # Prioritaskan 'access' atau 'access_token' untuk login normal
         sso_jwt = sso_data.get('access') or sso_data.get('access_token') or sso_data.get('token')
+        refresh_jwt = sso_data.get('refresh') or sso_data.get('refresh_token')
         if not sso_jwt:
             return Response({'error': 'No SSO token returned', 'sso_response': sso_data}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # 2. Decode SSO JWT untuk ekstrak roles & permissions
-        sso_claims = decode_sso_jwt(sso_jwt)
+        sso_claims = decode_sso_jwt(sso_jwt, refresh_jwt)
         
         # 3. Get User Profile from SSO
         me_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/me/"
@@ -260,12 +266,12 @@ def login_view(request):
             
         # Prioritaskan 'access' atau 'access_token' untuk login normal
         sso_access = sso_data.get('access') or sso_data.get('access_token') or sso_data.get('token')
-        
+        sso_refresh = sso_data.get('refresh') or sso_data.get('refresh_token')
         if not sso_access:
             return Response({'error': 'No SSO access token returned'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Decode SSO JWT untuk ekstrak roles & permissions
-        sso_claims = decode_sso_jwt(sso_access)
+        sso_claims = decode_sso_jwt(sso_access, sso_refresh)
         
         # Get User Profile
         me_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/me/"
@@ -500,11 +506,11 @@ def verify_mfa_login_view(request):
         # Alur Login Normal (untuk yang memasukkan token pre-auth)
         sso_data = sso_resp.json()
         sso_access = sso_data.get('access') or sso_data.get('access_token') or sso_data.get('token')
-        
+        sso_refresh = sso_data.get('refresh') or sso_data.get('refresh_token')
         if not sso_access:
             return Response({'error': 'No SSO access token returned'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-        sso_claims = decode_sso_jwt(sso_access)
+        sso_claims = decode_sso_jwt(sso_access, sso_refresh)
         
         me_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/me/"
         headers_me = {'Authorization': f'Bearer {sso_access}'}
@@ -606,6 +612,108 @@ def mfa_disable_view(request):
         return Response(res_data, status=resp.status_code)
     except requests.RequestException as e:
          return Response({'error': 'SSO Request Error', 'details': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def passkeys_list(request):
+    sso_passkeys_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/passkeys/"
+    headers = {
+        "Authorization": request.headers.get("Authorization", ""),
+    }
+    # headers = {
+    #     "Authorization": f"Bearer {request.COOKIES.get('access_token')}"
+    # }
+    try:
+        sso_resp = requests.get(sso_passkeys_url, headers=headers)
+        if sso_resp.status_code != 200:
+            return Response({'error': 'Failed to fetch Passkeys', 'details': sso_resp.text}, status=sso_resp.status_code)
+        return Response(sso_resp.json())
+    except requests.RequestException as e:
+        return Response({'error': 'SSO Integration Error', 'details': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def passkeys_login_begin(request):
+    sso_passkeys_login_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/passkeys/login/begin/"
+    try:
+        sso_resp = requests.get(sso_passkeys_login_url)
+        if sso_resp.status_code != 200:
+            return Response({'error': 'Failed to initiate Passkeys login', 'details': sso_resp.text}, status=sso_resp.status_code)
+        return Response(sso_resp.json())
+    except requests.RequestException as e:
+        return Response({'error': 'SSO Integration Error', 'details': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def passkeys_login_complete(request):
+    sso_passkeys_login_complete_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/passkeys/login/complete/"
+    headers = {
+        "Authorization": request.headers.get("Authorization", ""),
+    }
+    # headers = {
+    #     "Authorization": f"Bearer {request.COOKIES.get('access_token')}"
+    # }
+    try:
+        sso_resp = requests.post(sso_passkeys_login_complete_url, json=request.data, headers=headers)
+        if sso_resp.status_code != 200:
+            return Response({'error': 'Failed to complete Passkeys login', 'details': sso_resp.text}, status=sso_resp.status_code)
+        return Response(sso_resp.json())
+    except requests.RequestException as e:
+        return Response({'error': 'SSO Integration Error', 'details': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def passkeys_register_begin(request):
+    sso_passkeys_register_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/passkeys/register/begin/"
+    headers = {
+        "Authorization": request.headers.get("Authorization", ""),
+    }
+    # headers = {
+    #     "Authorization": f"Bearer {request.COOKIES.get('access_token')}"
+    # }
+    try:
+        sso_resp = requests.get(sso_passkeys_register_url, headers=headers)
+        if sso_resp.status_code != 200:
+            return Response({'error': 'Failed to initiate Passkeys registration', 'details': sso_resp.text}, status=sso_resp.status_code)
+        return Response(sso_resp.json())
+    except requests.RequestException as e:
+        return Response({'error': 'SSO Integration Error', 'details': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def passkeys_register_complete(request):
+    sso_passkeys_register_complete_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/passkeys/register/complete/"
+    headers = {
+        "Authorization": request.headers.get("Authorization", ""),
+    }
+    # headers = {
+    #     "Authorization": f"Bearer {request.COOKIES.get('access_token')}"
+    # }
+    try:
+        sso_resp = requests.post(sso_passkeys_register_complete_url, json=request.data, headers=headers)
+        if sso_resp.status_code != 200:
+            return Response({'error': 'Failed to complete Passkeys registration', 'details': sso_resp.text}, status=sso_resp.status_code)
+        return Response(sso_resp.json())
+    except requests.RequestException as e:
+        return Response({'error': 'SSO Integration Error', 'details': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+@api_view(['DELETE'])
+@permission_classes([AllowAny])
+def passkeys_delete(request, id):
+    sso_passkeys_delete_url = f"{settings.SSO_ARNATECH_BASE_URL}/api/auth/passkeys/delete/{id}/"
+    headers = {
+        "Authorization": request.headers.get("Authorization", ""),
+    }
+    # headers = {
+    #     "Authorization": f"Bearer {request.COOKIES.get('access_token')}"
+    # }
+    try:
+        sso_resp = requests.delete(sso_passkeys_delete_url, headers=headers)
+        if sso_resp.status_code != 200:
+            return Response({'error': 'Failed to delete Passkeys', 'details': sso_resp.text}, status=sso_resp.status_code)
+        return Response({'message': 'Passkeys deleted successfully'})
+    except requests.RequestException as e:
+        return Response({'error': 'SSO Integration Error', 'details': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 # --- Role Management (PENTING: View Baru) ---
 @api_view(['GET'])

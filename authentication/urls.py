@@ -17,6 +17,15 @@ urlpatterns = [
     path('mfa/set/', views.mfa_setup_view, name='mfa-set'),
     path('mfa/disable/', views.mfa_disable_view, name='mfa-disable'),
     
+    # Passkey Auth Proxy Endpoints
+    path('passkeys/', views.passkeys_list, name='passkeys-list'),
+    path('passkeys/login/begin/', views.passkeys_login_begin, name='passkeys-login-begin'),
+    path('passkeys/login/complete/', views.passkeys_login_complete, name='passkeys-login-complete'),
+    path('passkeys/register/begin/', views.passkeys_register_begin, name='passkeys-register-begin'),
+    path('passkeys/register/complete/', views.passkeys_register_complete, name='passkeys-register-complete'),
+    path('passkeys/delete/<str:id>/', views.passkeys_delete, name='passkeys-delete'),
+
+    
     # --- Role Management ---
     path('roles/', views.role_list, name='role-list'), 
 
